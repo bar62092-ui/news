@@ -1,7 +1,7 @@
 import { GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import maplibregl, { NavigationControl } from "maplibre-gl";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AirItem, Bbox, SeaItem } from "../types";
 import type { CountryFeature, CountryMarker } from "../lib/countries";
@@ -35,6 +35,8 @@ const MAP_STYLE = {
 
 const MAX_RENDERED_AIR_ROUTES = 180;
 const MAX_RENDERED_SEA_ROUTES = 60;
+const MAX_INTERACTION_AIR_POINTS = 48;
+const MAX_INTERACTION_SEA_POINTS = 18;
 
 export function MapView({
   countryFeatures,
@@ -52,14 +54,22 @@ export function MapView({
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const selectCountryRef = useRef(onCountrySelect);
   const viewportChangeRef = useRef(onViewportChange);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const isInteractingRef = useRef(false);
   const countryCollection = useMemo(() => buildFeatureCollection(countryFeatures), [countryFeatures]);
   const renderedAirItems = useMemo(
-    () => (showRoutes ? airItems.slice(0, MAX_RENDERED_AIR_ROUTES) : []),
-    [airItems, showRoutes],
+    () =>
+      showRoutes
+        ? airItems.slice(0, isInteracting ? MAX_INTERACTION_AIR_POINTS : MAX_RENDERED_AIR_ROUTES)
+        : [],
+    [airItems, isInteracting, showRoutes],
   );
   const renderedSeaItems = useMemo(
-    () => (showRoutes ? seaItems.slice(0, MAX_RENDERED_SEA_ROUTES) : []),
-    [seaItems, showRoutes],
+    () =>
+      showRoutes
+        ? seaItems.slice(0, isInteracting ? MAX_INTERACTION_SEA_POINTS : MAX_RENDERED_SEA_ROUTES)
+        : [],
+    [isInteracting, seaItems, showRoutes],
   );
 
   useEffect(() => {
@@ -84,15 +94,27 @@ export function MapView({
     mapRef.current = map;
     map.addControl(new NavigationControl({ visualizePitch: false }), "top-right");
 
-    const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
+    const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
     overlayRef.current = overlay;
     map.addControl(overlay);
+
+    const setInteractionState = (nextValue: boolean) => {
+      if (isInteractingRef.current === nextValue) {
+        return;
+      }
+      isInteractingRef.current = nextValue;
+      setIsInteracting(nextValue);
+    };
 
     map.on("load", () => {
       notifyViewport(map, viewportChangeRef.current);
     });
 
+    map.on("movestart", () => {
+      setInteractionState(true);
+    });
     map.on("moveend", () => {
+      setInteractionState(false);
       notifyViewport(map, viewportChangeRef.current);
     });
 
@@ -114,7 +136,7 @@ export function MapView({
       new GeoJsonLayer<any>({
         id: "country-polygons",
         data: countryCollection,
-        pickable: true,
+        pickable: !isInteracting,
         stroked: true,
         filled: true,
         lineWidthUnits: "pixels",
@@ -157,8 +179,8 @@ export function MapView({
       new ScatterplotLayer<CountryMarker>({
         id: "country-markers",
         data: countryMarkers,
-        pickable: true,
-        stroked: true,
+        pickable: !isInteracting,
+        stroked: !isInteracting,
         radiusUnits: "pixels",
         getPosition: (item) => item.position,
         getRadius: (item) => Math.max(4, Math.min(18, 6 + item.activity * 0.25)),
@@ -175,7 +197,7 @@ export function MapView({
       }),
     ];
 
-    if (showRoutes) {
+    if (showRoutes && !isInteracting) {
       layers.push(
         new PathLayer<AirItem>({
           id: "air-paths",
@@ -187,6 +209,9 @@ export function MapView({
           opacity: 0.82,
         }),
       );
+    }
+
+    if (showRoutes) {
       layers.push(
         new ScatterplotLayer<AirItem>({
           id: "air-points",
@@ -197,17 +222,19 @@ export function MapView({
           getFillColor: () => [255, 165, 122, 255],
         }),
       );
-      layers.push(
-        new PathLayer<SeaItem>({
-          id: "sea-paths",
-          data: renderedSeaItems,
-          getPath: (item) => item.track,
-          getColor: () => [76, 181, 245, 190],
-          getWidth: 2,
-          widthUnits: "pixels",
-          opacity: 0.72,
-        }),
-      );
+      if (!isInteracting) {
+        layers.push(
+          new PathLayer<SeaItem>({
+            id: "sea-paths",
+            data: renderedSeaItems,
+            getPath: (item) => item.track,
+            getColor: () => [76, 181, 245, 190],
+            getWidth: 2,
+            widthUnits: "pixels",
+            opacity: 0.72,
+          }),
+        );
+      }
       layers.push(
         new ScatterplotLayer<SeaItem>({
           id: "sea-points",
@@ -221,7 +248,7 @@ export function MapView({
     }
 
     overlay.setProps({ layers });
-  }, [countryCollection, countryMarkers, renderedAirItems, renderedSeaItems, selectedIso2, showRoutes]);
+  }, [countryCollection, countryMarkers, isInteracting, renderedAirItems, renderedSeaItems, selectedIso2, showRoutes]);
 
   useEffect(() => {
     const map = mapRef.current;

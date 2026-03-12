@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: world-watch
+    env: docker
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"

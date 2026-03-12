@@ -1,7 +1,7 @@
 import { GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import maplibregl, { NavigationControl } from "maplibre-gl";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import type { AirItem, Bbox, SeaItem } from "../types";
 import type { CountryFeature, CountryMarker } from "../lib/countries";
@@ -33,6 +33,9 @@ const MAP_STYLE = {
   ],
 };
 
+const MAX_RENDERED_AIR_ROUTES = 180;
+const MAX_RENDERED_SEA_ROUTES = 60;
+
 export function MapView({
   countryFeatures,
   countryMarkers,
@@ -49,6 +52,15 @@ export function MapView({
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const selectCountryRef = useRef(onCountrySelect);
   const viewportChangeRef = useRef(onViewportChange);
+  const countryCollection = useMemo(() => buildFeatureCollection(countryFeatures), [countryFeatures]);
+  const renderedAirItems = useMemo(
+    () => (showRoutes ? airItems.slice(0, MAX_RENDERED_AIR_ROUTES) : []),
+    [airItems, showRoutes],
+  );
+  const renderedSeaItems = useMemo(
+    () => (showRoutes ? seaItems.slice(0, MAX_RENDERED_SEA_ROUTES) : []),
+    [seaItems, showRoutes],
+  );
 
   useEffect(() => {
     selectCountryRef.current = onCountrySelect;
@@ -72,7 +84,7 @@ export function MapView({
     mapRef.current = map;
     map.addControl(new NavigationControl({ visualizePitch: false }), "top-right");
 
-    const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
+    const overlay = new MapboxOverlay({ interleaved: false, layers: [] });
     overlayRef.current = overlay;
     map.addControl(overlay);
 
@@ -101,7 +113,7 @@ export function MapView({
     const layers: any[] = [
       new GeoJsonLayer<any>({
         id: "country-polygons",
-        data: buildFeatureCollection(countryFeatures),
+        data: countryCollection,
         pickable: true,
         stroked: true,
         filled: true,
@@ -126,7 +138,7 @@ export function MapView({
         },
         updateTriggers: {
           getLineColor: [selectedIso2],
-          getFillColor: [selectedIso2, countryFeatures.length],
+          getFillColor: [selectedIso2, countryCollection.features.length],
         },
         onHover: (info) => {
           const map = mapRef.current;
@@ -167,7 +179,7 @@ export function MapView({
       layers.push(
         new PathLayer<AirItem>({
           id: "air-paths",
-          data: airItems,
+          data: renderedAirItems,
           getPath: (item) => item.track,
           getColor: () => [255, 123, 69, 190],
           getWidth: 2,
@@ -178,7 +190,7 @@ export function MapView({
       layers.push(
         new ScatterplotLayer<AirItem>({
           id: "air-points",
-          data: airItems,
+          data: renderedAirItems,
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
           getRadius: 3.5,
@@ -188,7 +200,7 @@ export function MapView({
       layers.push(
         new PathLayer<SeaItem>({
           id: "sea-paths",
-          data: seaItems,
+          data: renderedSeaItems,
           getPath: (item) => item.track,
           getColor: () => [76, 181, 245, 190],
           getWidth: 2,
@@ -199,7 +211,7 @@ export function MapView({
       layers.push(
         new ScatterplotLayer<SeaItem>({
           id: "sea-points",
-          data: seaItems,
+          data: renderedSeaItems,
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
           getRadius: 4,
@@ -209,7 +221,7 @@ export function MapView({
     }
 
     overlay.setProps({ layers });
-  }, [airItems, countryFeatures, countryMarkers, seaItems, selectedIso2, showRoutes]);
+  }, [countryCollection, countryMarkers, renderedAirItems, renderedSeaItems, selectedIso2, showRoutes]);
 
   useEffect(() => {
     const map = mapRef.current;

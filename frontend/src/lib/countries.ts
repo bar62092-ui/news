@@ -41,38 +41,38 @@ type AtlasTopology = {
   };
 };
 
+type BaseCountryShape = {
+  iso2: string;
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  centroid: [number, number];
+  bbox: [number, number, number, number];
+};
+
+const BASE_COUNTRY_SHAPES = buildBaseCountryShapes();
+
 export function buildCountryMapData(countries: CountrySummary[], selectedIso2: string | null): {
   features: CountryFeature[];
   markers: CountryMarker[];
 } {
   const summaryByIso2 = new Map(countries.map((country) => [country.iso2, country]));
-  const topology = countriesAtlas as AtlasTopology;
-  const collection = feature(topology as never, topology.objects.countries as never) as unknown as GeoJSON.FeatureCollection<
-    GeoJSON.Polygon | GeoJSON.MultiPolygon
-  >;
 
   const features: CountryFeature[] = [];
   const markers: CountryMarker[] = [];
 
-  for (const entry of collection.features) {
-    const rawId = String(entry.id ?? "").padStart(3, "0");
-    const iso2 = ((isoCountries as unknown as { numericToAlpha2?: (value: string) => string | undefined }).numericToAlpha2?.(rawId) ||
-      "") as string;
-    if (!iso2) {
-      continue;
-    }
+  for (const shape of BASE_COUNTRY_SHAPES) {
+    const { iso2 } = shape;
     const summary = summaryByIso2.get(iso2);
     if (!summary) {
       continue;
     }
-    const centroid = summary.centroid ?? castPoint(geoCentroid(entry));
-    const bounds = summary.bbox ?? flattenBounds(geoBounds(entry));
+    const centroid = summary.centroid ?? shape.centroid;
+    const bounds = summary.bbox ?? shape.bbox;
     const activity = summary.newsCount + summary.airCount + summary.seaCount;
 
     features.push({
       type: "Feature",
       id: iso2,
-      geometry: entry.geometry,
+      geometry: shape.geometry,
       properties: {
         iso2,
         name: summary.name,
@@ -104,6 +104,30 @@ export function buildCountryMapData(countries: CountrySummary[], selectedIso2: s
 
 export function localizeCountryName(iso2: string, fallback: string): string {
   return isoCountries.getName(iso2, "pt") || fallback;
+}
+
+function buildBaseCountryShapes(): BaseCountryShape[] {
+  const topology = countriesAtlas as AtlasTopology;
+  const collection = feature(topology as never, topology.objects.countries as never) as unknown as GeoJSON.FeatureCollection<
+    GeoJSON.Polygon | GeoJSON.MultiPolygon
+  >;
+
+  return collection.features
+    .map((entry) => {
+      const rawId = String(entry.id ?? "").padStart(3, "0");
+      const iso2 = ((isoCountries as unknown as { numericToAlpha2?: (value: string) => string | undefined }).numericToAlpha2?.(rawId) ||
+        "") as string;
+      if (!iso2) {
+        return null;
+      }
+      return {
+        iso2,
+        geometry: entry.geometry,
+        centroid: castPoint(geoCentroid(entry)),
+        bbox: flattenBounds(geoBounds(entry)),
+      } satisfies BaseCountryShape;
+    })
+    .filter(Boolean) as BaseCountryShape[];
 }
 
 function castPoint(raw: [number, number]): [number, number] {

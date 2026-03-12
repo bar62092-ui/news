@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchBootstrap, fetchCountry, fetchCountryNews, fetchCountryTopics, fetchProviders, getWebSocketUrl } from "./api";
 import { CountryPanel } from "./components/CountryPanel";
@@ -39,18 +39,32 @@ export default function App() {
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null);
   const isReady = bootstrap !== null;
 
-  const mergedCountries =
-    bootstrap?.countries.map((country) => ({
-      ...country,
-      name: localizeCountryName(country.iso2, country.name),
-    })) ?? [];
+  const mergedCountries = useMemo(
+    () =>
+      bootstrap?.countries.map((country) => ({
+        ...country,
+        name: localizeCountryName(country.iso2, country.name),
+      })) ?? [],
+    [bootstrap],
+  );
   const mapData = useMemo(() => buildCountryMapData(mergedCountries, selectedIso2), [mergedCountries, selectedIso2]);
-  const selectedMapCountry = mapData.markers.find((country) => country.iso2 === selectedIso2) ?? null;
-  const selectedCountryFromBootstrap = mergedCountries.find((country) => country.iso2 === selectedIso2) ?? null;
+  const selectedMapCountry = useMemo(
+    () => mapData.markers.find((country) => country.iso2 === selectedIso2) ?? null,
+    [mapData.markers, selectedIso2],
+  );
+  const selectedCountryFromBootstrap = useMemo(
+    () => mergedCountries.find((country) => country.iso2 === selectedIso2) ?? null,
+    [mergedCountries, selectedIso2],
+  );
   const activeCountry = selectedCountry ?? selectedCountryFromBootstrap;
   const selectedBbox = activeCountry?.bbox ?? selectedMapCountry?.bbox ?? null;
   const shouldShowRoutes = zoom >= 3 || Boolean(activeCountry);
-  const watchlistCountries = WATCHLIST.map((iso2) => mergedCountries.find((country) => country.iso2 === iso2)).filter(Boolean) as CountrySummary[];
+  const watchlistCountries = useMemo(
+    () => WATCHLIST.map((iso2) => mergedCountries.find((country) => country.iso2 === iso2)).filter(Boolean) as CountrySummary[],
+    [mergedCountries],
+  );
+  const deferredAirItems = useDeferredValue(airItems);
+  const deferredSeaItems = useDeferredValue(seaItems);
 
   useEffect(() => {
     let active = true;
@@ -159,44 +173,57 @@ export default function App() {
         if (payload.type !== "snapshot") {
           return;
         }
-        setLastSnapshotAt(payload.generatedAt);
-        if (payload.air?.items) {
-          setAirItems(payload.air.items);
-        }
-        if (payload.sea?.items) {
-          setSeaItems(payload.sea.items);
-        }
-        if (payload.countryIso2 && (payload.air?.items || payload.sea?.items)) {
-          const nextAirCount = payload.air?.items?.length ?? 0;
-          const nextSeaCount = payload.sea?.items?.length ?? 0;
-          setSelectedCountry((current) =>
-            current && current.iso2 === payload.countryIso2
-              ? { ...current, airCount: nextAirCount, seaCount: nextSeaCount }
-              : current,
-          );
-          setBootstrap((current) =>
-            current
-              ? {
-                  ...current,
-                  countries: current.countries.map((item) =>
-                    item.iso2 === payload.countryIso2 ? { ...item, airCount: nextAirCount, seaCount: nextSeaCount } : item,
-                  ),
+        startTransition(() => {
+          setLastSnapshotAt(payload.generatedAt);
+          if (payload.air?.items) {
+            setAirItems(payload.air.items);
+          }
+          if (payload.sea?.items) {
+            setSeaItems(payload.sea.items);
+          }
+          if (payload.countryIso2 && (payload.air?.items || payload.sea?.items)) {
+            const nextAirCount = payload.air?.items?.length ?? 0;
+            const nextSeaCount = payload.sea?.items?.length ?? 0;
+            setSelectedCountry((current) => {
+              if (!current || current.iso2 !== payload.countryIso2) {
+                return current;
+              }
+              if (current.airCount === nextAirCount && current.seaCount === nextSeaCount) {
+                return current;
+              }
+              return { ...current, airCount: nextAirCount, seaCount: nextSeaCount };
+            });
+            setBootstrap((current) => {
+              if (!current) {
+                return current;
+              }
+              let changed = false;
+              const nextCountries = current.countries.map((item) => {
+                if (item.iso2 !== payload.countryIso2) {
+                  return item;
                 }
-              : current,
-          );
-        }
-        if (payload.news) {
-          setNewsPayload((current) => ({
-            country: current?.country ?? activeCountry,
-            items: payload.news?.items ?? current?.items ?? [],
-            stale: payload.news?.stale ?? current?.stale ?? false,
-            lastRefreshAt: payload.news?.lastRefreshAt ?? current?.lastRefreshAt ?? null,
-            status: payload.news?.status ?? current?.status ?? null,
-          }));
-        }
-        if (payload.topics) {
-          setTopicItems(payload.topics);
-        }
+                if (item.airCount === nextAirCount && item.seaCount === nextSeaCount) {
+                  return item;
+                }
+                changed = true;
+                return { ...item, airCount: nextAirCount, seaCount: nextSeaCount };
+              });
+              return changed ? { ...current, countries: nextCountries } : current;
+            });
+          }
+          if (payload.news) {
+            setNewsPayload((current) => ({
+              country: current?.country ?? activeCountry,
+              items: payload.news?.items ?? current?.items ?? [],
+              stale: payload.news?.stale ?? current?.stale ?? false,
+              lastRefreshAt: payload.news?.lastRefreshAt ?? current?.lastRefreshAt ?? null,
+              status: payload.news?.status ?? current?.status ?? null,
+            }));
+          }
+          if (payload.topics) {
+            setTopicItems(payload.topics);
+          }
+        });
       });
 
       socket.addEventListener("close", () => {
@@ -312,8 +339,8 @@ export default function App() {
           <MapView
             countryFeatures={mapData.features}
             countryMarkers={mapData.markers}
-            airItems={airItems}
-            seaItems={seaItems}
+            airItems={deferredAirItems}
+            seaItems={deferredSeaItems}
             selectedIso2={selectedIso2}
             selectedBbox={selectedBbox}
             showRoutes={shouldShowRoutes}

@@ -227,7 +227,7 @@ button {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(320px, 430px);
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .map-shell,
@@ -299,6 +299,24 @@ button {
   display: grid;
   gap: 18px;
   padding: 20px;
+}
+
+@media (min-width: 1181px) {
+  .map-shell {
+    position: sticky;
+    top: 24px;
+    height: calc(100vh - 48px);
+    min-height: 680px;
+  }
+
+  .country-panel {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
 }
 
 .empty-panel {

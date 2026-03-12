@@ -13,16 +13,17 @@ def test_http_endpoints_and_websocket(app):
         news_response = client.get("/api/countries/BR/news")
         assert news_response.status_code == 200
         assert news_response.json()["items"]
+        assert news_response.json()["items"][0]["contentText"]
 
         topics_response = client.get("/api/countries/BR/topics")
         assert topics_response.status_code == 200
         assert topics_response.json()["items"]
 
-        air_response = client.get("/api/traffic/air", params={"bbox": "-60,-35,-30,5"})
+        air_response = client.get("/api/traffic/air", params={"bbox": "-60,-35,-30,5", "countryIso2": "BR"})
         assert air_response.status_code == 200
         assert air_response.json()["items"]
 
-        sea_response = client.get("/api/traffic/sea", params={"bbox": "-60,-35,-30,5"})
+        sea_response = client.get("/api/traffic/sea", params={"bbox": "-60,-35,-30,5", "countryIso2": "BR"})
         assert sea_response.status_code == 200
         assert sea_response.json()["items"]
 

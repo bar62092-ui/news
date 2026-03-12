@@ -139,18 +139,18 @@ def create_api_router(services: AppServices) -> APIRouter:
         }
 
     @router.get("/traffic/air")
-    async def get_air_traffic(bbox: str) -> dict[str, Any]:
+    async def get_air_traffic(bbox: str, countryIso2: str | None = None) -> dict[str, Any]:
         parsed = _parse_bbox_query(bbox)
-        payload = await services.traffic.get_air_snapshot(parsed)
+        payload = await services.traffic.get_air_snapshot(parsed, preferred_country_iso2=countryIso2.upper() if countryIso2 else None)
         return {
             "bbox": list(parsed),
             **payload,
         }
 
     @router.get("/traffic/sea")
-    async def get_sea_traffic(bbox: str) -> dict[str, Any]:
+    async def get_sea_traffic(bbox: str, countryIso2: str | None = None) -> dict[str, Any]:
         parsed = _parse_bbox_query(bbox)
-        payload = await services.traffic.get_sea_snapshot(parsed)
+        payload = await services.traffic.get_sea_snapshot(parsed, preferred_country_iso2=countryIso2.upper() if countryIso2 else None)
         return {
             "bbox": list(parsed),
             **payload,
@@ -208,9 +208,15 @@ async def websocket_live(websocket: WebSocket, services: AppServices) -> None:
                 "layers": list(subscription.layers),
             }
             if "air" in subscription.layers:
-                payload["air"] = await services.traffic.get_air_snapshot(subscription.bbox)
+                payload["air"] = await services.traffic.get_air_snapshot(
+                    subscription.bbox,
+                    preferred_country_iso2=subscription.country_iso2,
+                )
             if "sea" in subscription.layers:
-                payload["sea"] = await services.traffic.get_sea_snapshot(subscription.bbox)
+                payload["sea"] = await services.traffic.get_sea_snapshot(
+                    subscription.bbox,
+                    preferred_country_iso2=subscription.country_iso2,
+                )
             if subscription.country_iso2 and "news" in subscription.layers:
                 payload["news"] = await services.news.get_country_news_payload(subscription.country_iso2, limit=10)
                 payload["topics"] = await services.news.get_country_topics(subscription.country_iso2)

@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS news_items (
     language TEXT,
     topics_json TEXT NOT NULL DEFAULT '[]',
     fallback_scope TEXT NOT NULL DEFAULT 'country',
+    summary TEXT,
+    content_text TEXT,
     fetched_at TEXT NOT NULL,
     UNIQUE(country_iso2, url)
 );
@@ -107,4 +109,12 @@ class Database:
     def initialize(self) -> None:
         with self.connect() as connection:
             connection.executescript(SCHEMA_SQL)
+            self._ensure_column(connection, "news_items", "summary", "TEXT")
+            self._ensure_column(connection, "news_items", "content_text", "TEXT")
             connection.commit()
+
+    def _ensure_column(self, connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
+        rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        known_columns = {row["name"] for row in rows}
+        if column_name not in known_columns:
+            connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")

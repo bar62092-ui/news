@@ -28,7 +28,7 @@ class OpenSkyProvider:
         self.username = username
         self.password = password
 
-    async def fetch_bbox(self, bbox: BBox) -> list[AirTrackPoint]:
+    async def fetch_bbox(self, bbox: BBox, preferred_country_iso2: str | None = None) -> list[AirTrackPoint]:
         params = {
             "lamin": bbox[1],
             "lomin": bbox[0],
@@ -45,7 +45,7 @@ class OpenSkyProvider:
             if len(row) < 11 or row[5] is None or row[6] is None:
                 continue
             origin_country = str(row[2]).strip() if row[2] else None
-            country_iso2 = self.catalog.match_name_to_iso2(origin_country)
+            country_iso2 = self.catalog.match_name_to_iso2(origin_country) or preferred_country_iso2
             observed_timestamp = row[4] or row[3]
             observed_at = datetime.fromtimestamp(float(observed_timestamp), tz=timezone.utc) if observed_timestamp else utc_now()
             items.append(
@@ -62,6 +62,43 @@ class OpenSkyProvider:
                     observed_at=observed_at,
                 )
             )
+        return items or self.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
+
+    def sample_bbox(self, bbox: BBox, preferred_country_iso2: str | None = None) -> list[AirTrackPoint]:
+        center_lon = (bbox[0] + bbox[2]) / 2
+        center_lat = (bbox[1] + bbox[3]) / 2
+        offsets = [(-1.0, 0.8), (-0.3, -0.2), (0.7, 0.45)]
+        items: list[AirTrackPoint] = []
+        now = utc_now()
+        for index, (lon_offset, lat_offset) in enumerate(offsets, start=1):
+            items.append(
+                AirTrackPoint(
+                    icao24=f"fallback-air-{index}",
+                    callsign=f"WW{100 + index}",
+                    origin_country=preferred_country_iso2,
+                    country_iso2=preferred_country_iso2,
+                    longitude=center_lon + lon_offset,
+                    latitude=center_lat + lat_offset,
+                    altitude=9600 + (index * 850),
+                    velocity=205 + (index * 12),
+                    heading=68 + (index * 18),
+                    observed_at=now + timedelta(seconds=index),
+                )
+            )
+            items.append(
+                AirTrackPoint(
+                    icao24=f"fallback-air-{index}",
+                    callsign=f"WW{100 + index}",
+                    origin_country=preferred_country_iso2,
+                    country_iso2=preferred_country_iso2,
+                    longitude=center_lon + (lon_offset * 0.6),
+                    latitude=center_lat + (lat_offset * 0.6),
+                    altitude=9200 + (index * 800),
+                    velocity=198 + (index * 10),
+                    heading=68 + (index * 18),
+                    observed_at=now - timedelta(minutes=4) + timedelta(seconds=index),
+                )
+            )
         return items
 
 
@@ -71,9 +108,9 @@ class AisStreamProvider:
     def __init__(self, api_key: str | None) -> None:
         self.api_key = api_key
 
-    async def fetch_bbox(self, bbox: BBox) -> list[SeaTrackPoint]:
+    async def fetch_bbox(self, bbox: BBox, preferred_country_iso2: str | None = None) -> list[SeaTrackPoint]:
         if not self.api_key:
-            return self._sample_tracks(bbox)
+            return self.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
         uri = "wss://stream.aisstream.io/v0/stream"
         subscription = {
             "APIKey": self.api_key,
@@ -93,14 +130,14 @@ class AisStreamProvider:
                     timeout = max((deadline - utc_now()).total_seconds(), 0.2)
                     raw = await asyncio.wait_for(socket.recv(), timeout=timeout)
                     payload = json.loads(raw)
-                    item = self._parse_message(payload)
+                    item = self._parse_message(payload, preferred_country_iso2=preferred_country_iso2)
                     if item is not None:
                         tracks.append(item)
         except Exception:  # noqa: BLE001
-            return self._sample_tracks(bbox)
-        return tracks or self._sample_tracks(bbox)
+            return self.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
+        return tracks or self.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
 
-    def _parse_message(self, payload: dict[str, Any]) -> SeaTrackPoint | None:
+    def _parse_message(self, payload: dict[str, Any], preferred_country_iso2: str | None = None) -> SeaTrackPoint | None:
         metadata = payload.get("MetaData") or {}
         message = payload.get("Message") or {}
         inner = None
@@ -120,7 +157,7 @@ class AisStreamProvider:
         return SeaTrackPoint(
             mmsi=str(mmsi),
             vessel_name=metadata.get("ShipName"),
-            country_iso2=None,
+            country_iso2=preferred_country_iso2,
             longitude=float(longitude),
             latitude=float(latitude),
             speed=float(inner["Sog"]) if inner.get("Sog") is not None else None,
@@ -130,23 +167,39 @@ class AisStreamProvider:
             observed_at=observed_at,
         )
 
-    def _sample_tracks(self, bbox: BBox) -> list[SeaTrackPoint]:
+    def sample_bbox(self, bbox: BBox, preferred_country_iso2: str | None = None) -> list[SeaTrackPoint]:
         center_lon = (bbox[0] + bbox[2]) / 2
         center_lat = (bbox[1] + bbox[3]) / 2
         offsets = [(-0.9, -0.3), (0.6, 0.5), (1.1, -0.4)]
         tracks: list[SeaTrackPoint] = []
+        now = utc_now()
         for index, (lon_offset, lat_offset) in enumerate(offsets, start=1):
             tracks.append(
                 SeaTrackPoint(
                     mmsi=f"sample-{index}",
                     vessel_name=f"Fallback Vessel {index}",
+                    country_iso2=preferred_country_iso2,
                     longitude=center_lon + lon_offset,
                     latitude=center_lat + lat_offset,
                     speed=13.0 + index,
                     course=85.0 + (index * 7),
                     status="Fallback",
                     source="sample",
-                    observed_at=utc_now(),
+                    observed_at=now + timedelta(seconds=index),
+                )
+            )
+            tracks.append(
+                SeaTrackPoint(
+                    mmsi=f"sample-{index}",
+                    vessel_name=f"Fallback Vessel {index}",
+                    country_iso2=preferred_country_iso2,
+                    longitude=center_lon + (lon_offset * 0.55),
+                    latitude=center_lat + (lat_offset * 0.55),
+                    speed=12.0 + index,
+                    course=81.0 + (index * 8),
+                    status="Fallback",
+                    source="sample",
+                    observed_at=now - timedelta(minutes=7) + timedelta(seconds=index),
                 )
             )
         return tracks

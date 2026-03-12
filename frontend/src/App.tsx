@@ -37,6 +37,7 @@ export default function App() {
   const reconnectTokenRef = useRef(0);
   const [reconnectToken, setReconnectToken] = useState(0);
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null);
+  const isReady = bootstrap !== null;
 
   const mergedCountries =
     bootstrap?.countries.map((country) => ({
@@ -44,9 +45,10 @@ export default function App() {
       name: localizeCountryName(country.iso2, country.name),
     })) ?? [];
   const mapData = useMemo(() => buildCountryMapData(mergedCountries, selectedIso2), [mergedCountries, selectedIso2]);
+  const selectedMapCountry = mapData.markers.find((country) => country.iso2 === selectedIso2) ?? null;
   const selectedCountryFromBootstrap = mergedCountries.find((country) => country.iso2 === selectedIso2) ?? null;
   const activeCountry = selectedCountry ?? selectedCountryFromBootstrap;
-  const selectedBbox = activeCountry?.bbox ?? null;
+  const selectedBbox = activeCountry?.bbox ?? selectedMapCountry?.bbox ?? null;
   const shouldShowRoutes = zoom >= 3 || Boolean(activeCountry);
   const watchlistCountries = WATCHLIST.map((iso2) => mergedCountries.find((country) => country.iso2 === iso2)).filter(Boolean) as CountrySummary[];
 
@@ -61,7 +63,6 @@ export default function App() {
         setBootstrap(payload);
         setProviders(payload.providers);
         setViewport(payload.worldBbox);
-        setSelectedIso2((current) => current ?? "BR");
         setLastSnapshotAt(payload.generatedAt);
       } catch (error) {
         if (!active) {
@@ -132,7 +133,7 @@ export default function App() {
   }, [selectedIso2]);
 
   useEffect(() => {
-    if (!bootstrap) {
+    if (!isReady) {
       return;
     }
     let cancelled = false;
@@ -147,7 +148,7 @@ export default function App() {
           return;
         }
         setSocketState("open");
-        sendSubscription(socket, viewport, selectedCountry?.bbox ?? null, selectedIso2, shouldShowRoutes);
+        sendSubscription(socket, viewport, selectedBbox, selectedIso2, shouldShowRoutes);
       });
 
       socket.addEventListener("message", (event) => {
@@ -164,6 +165,25 @@ export default function App() {
         }
         if (payload.sea?.items) {
           setSeaItems(payload.sea.items);
+        }
+        if (payload.countryIso2 && (payload.air?.items || payload.sea?.items)) {
+          const nextAirCount = payload.air?.items?.length ?? 0;
+          const nextSeaCount = payload.sea?.items?.length ?? 0;
+          setSelectedCountry((current) =>
+            current && current.iso2 === payload.countryIso2
+              ? { ...current, airCount: nextAirCount, seaCount: nextSeaCount }
+              : current,
+          );
+          setBootstrap((current) =>
+            current
+              ? {
+                  ...current,
+                  countries: current.countries.map((item) =>
+                    item.iso2 === payload.countryIso2 ? { ...item, airCount: nextAirCount, seaCount: nextSeaCount } : item,
+                  ),
+                }
+              : current,
+          );
         }
         if (payload.news) {
           setNewsPayload((current) => ({
@@ -208,18 +228,18 @@ export default function App() {
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [bootstrap, reconnectToken]);
+  }, [isReady, reconnectToken]);
 
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       return;
     }
-    sendSubscription(socket, viewport, selectedCountry?.bbox ?? null, selectedIso2, shouldShowRoutes);
-  }, [selectedCountry?.bbox, selectedIso2, shouldShowRoutes, viewport]);
+    sendSubscription(socket, viewport, selectedBbox, selectedIso2, shouldShowRoutes);
+  }, [selectedBbox, selectedIso2, shouldShowRoutes, viewport]);
 
   useEffect(() => {
-    if (!bootstrap) {
+    if (!isReady) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -232,7 +252,7 @@ export default function App() {
     return () => {
       window.clearInterval(interval);
     };
-  }, [bootstrap]);
+  }, [isReady]);
 
   return (
     <div className="app-shell">

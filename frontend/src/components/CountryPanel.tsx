@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 import type { CountryNewsPayload, CountrySummary, TopicItem } from "../types";
 
 type CountryPanelProps = {
@@ -8,14 +10,20 @@ type CountryPanelProps = {
 };
 
 export function CountryPanel({ country, news, topics, socketState }: CountryPanelProps) {
+  const [openNewsId, setOpenNewsId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setOpenNewsId(news?.items?.[0]?.id ?? null);
+  }, [country?.iso2, news?.items]);
+
   if (!country) {
     return (
       <aside className="country-panel empty-panel">
         <p className="eyebrow">Observatorio global</p>
-        <h2>Escolha um país no mapa</h2>
+        <h2>Escolha um pais no mapa</h2>
         <p>
-          Os pontos indicam países com notícias, trilhas e coletas recentes. Em zoom global o painel funciona como centro de
-          triagem; ao selecionar um país o mapa aproxima e puxa rotas do bbox ativo.
+          Os pontos indicam paises com noticias, trilhas e coletas recentes. Em zoom global o painel funciona como centro de
+          triagem; ao selecionar um pais o mapa aproxima e puxa rotas do bbox ativo.
         </p>
       </aside>
     );
@@ -72,24 +80,52 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
         </div>
         {news?.items?.length ? (
           <ul className="news-list">
-            {news.items.map((item) => (
-              <li key={item.id} className="news-card">
-                <a href={item.url} target="_blank" rel="noreferrer">
-                  <strong>{item.title}</strong>
-                  <span>
-                    {item.source} · {formatDate(item.publishedAt)}
-                  </span>
-                  <small>{item.fallbackScope === "global" ? "fallback global" : "fonte do país"}</small>
-                </a>
-              </li>
-            ))}
+            {news.items.map((item) => {
+              const isOpen = item.id === openNewsId;
+              const paragraphs = splitParagraphs(item.contentText || item.summary);
+              return (
+                <li key={item.id} className={isOpen ? "news-card open" : "news-card"}>
+                  <button className="news-toggle" type="button" onClick={() => setOpenNewsId(isOpen ? null : item.id)}>
+                    <strong>{item.title}</strong>
+                    <span>
+                      {item.source} · {formatDate(item.publishedAt)}
+                    </span>
+                    <small>{item.fallbackScope === "global" ? "fallback global" : "fonte do pais"}</small>
+                  </button>
+                  {isOpen ? (
+                    <div className="news-body">
+                      {item.summary ? <p className="news-summary">{item.summary}</p> : null}
+                      {paragraphs.length ? (
+                        paragraphs.map((paragraph, index) => <p key={`${item.id}-${index}`}>{paragraph}</p>)
+                      ) : (
+                        <p className="muted-copy">Sem corpo extraido ainda para esta materia.</p>
+                      )}
+                      <a className="source-link" href={item.url} target="_blank" rel="noreferrer">
+                        Abrir fonte original
+                      </a>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         ) : (
-          <p className="muted-copy">Ainda sem notícias carregadas para este país.</p>
+          <p className="muted-copy">Ainda sem noticias carregadas para este pais.</p>
         )}
       </section>
     </aside>
   );
+}
+
+function splitParagraphs(value: string | null | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 function formatDate(value: string | null | undefined): string {

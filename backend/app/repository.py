@@ -126,6 +126,8 @@ class WorldWatchRepository:
                 item.language,
                 json.dumps(list(item.topics)),
                 item.fallback_scope,
+                item.summary,
+                item.content_text,
                 isoformat(fetched_at),
             )
             for item in items
@@ -134,9 +136,9 @@ class WorldWatchRepository:
             connection.executemany(
                 """
                 INSERT INTO news_items (
-                    country_iso2, title, source, url, published_at, language, topics_json, fallback_scope, fetched_at
+                    country_iso2, title, source, url, published_at, language, topics_json, fallback_scope, summary, content_text, fetched_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(country_iso2, url) DO UPDATE SET
                     title = excluded.title,
                     source = excluded.source,
@@ -144,6 +146,8 @@ class WorldWatchRepository:
                     language = excluded.language,
                     topics_json = excluded.topics_json,
                     fallback_scope = excluded.fallback_scope,
+                    summary = excluded.summary,
+                    content_text = excluded.content_text,
                     fetched_at = excluded.fetched_at
                 """,
                 rows,
@@ -154,7 +158,7 @@ class WorldWatchRepository:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, title, source, url, published_at, language, topics_json, fallback_scope, fetched_at
+                SELECT id, title, source, url, published_at, language, topics_json, fallback_scope, summary, content_text, fetched_at
                 FROM news_items
                 WHERE country_iso2 = ?
                 ORDER BY published_at DESC, id DESC
@@ -174,6 +178,8 @@ class WorldWatchRepository:
                     "language": row["language"],
                     "topics": json.loads(row["topics_json"] or "[]"),
                     "fallbackScope": row["fallback_scope"],
+                    "summary": row["summary"],
+                    "contentText": row["content_text"],
                     "fetchedAt": row["fetched_at"],
                 }
             )
@@ -183,7 +189,7 @@ class WorldWatchRepository:
         with self.database.connect() as connection:
             rows = connection.execute(
                 """
-                SELECT title, source, url, published_at, language, topics_json, fallback_scope
+                SELECT title, source, url, published_at, language, topics_json, fallback_scope, summary, content_text
                 FROM news_items
                 WHERE country_iso2 = ? AND published_at >= ?
                 ORDER BY published_at DESC
@@ -199,6 +205,8 @@ class WorldWatchRepository:
                 language=row["language"],
                 topics=tuple(json.loads(row["topics_json"] or "[]")),
                 fallback_scope=row["fallback_scope"] or "country",
+                summary=row["summary"],
+                content_text=row["content_text"],
             )
             for row in rows
         ]

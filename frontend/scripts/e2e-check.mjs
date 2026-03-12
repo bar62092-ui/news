@@ -8,8 +8,14 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
 try {
   await page.goto(target, { waitUntil: "networkidle", timeout: 45000 });
   await page.getByRole("heading", { name: /World Watch/i }).waitFor({ timeout: 10000 });
-  await page.getByRole("button", { name: /Brasil/i }).click();
+  await page.locator(".watch-pill").filter({ hasText: "Brasil" }).first().click();
   await page.getByRole("heading", { name: /Brasil/i }).waitFor({ timeout: 10000 });
+  await page.waitForTimeout(3000);
+  const routeValues = await page.locator(".metric-card strong").allTextContents();
+  if (!routeValues.length || Number(routeValues[1] || 0) <= 0 || Number(routeValues[2] || 0) <= 0) {
+    throw new Error(`Route counts were not populated: ${routeValues.join(",")}`);
+  }
+  await page.locator(".news-body").first().waitFor({ timeout: 10000 });
   await page.getByText(/Noticias recentes/i).waitFor({ timeout: 10000 });
   await page.screenshot({ path: "output/playwright/world-watch-home.png", fullPage: true });
 } finally {

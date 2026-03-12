@@ -31,9 +31,9 @@ class TrafficCoordinator:
         self._sea_cache = RequestCache()
         self._locks: dict[str, asyncio.Lock] = {}
 
-    async def get_air_snapshot(self, bbox: BBox) -> dict[str, object]:
+    async def get_air_snapshot(self, bbox: BBox, preferred_country_iso2: str | None = None) -> dict[str, object]:
         key = f"air:{_bbox_key(bbox)}"
-        await self._refresh_air_if_needed(key, bbox)
+        await self._refresh_air_if_needed(key, bbox, preferred_country_iso2=preferred_country_iso2)
         since = utc_now() - timedelta(minutes=90)
         items = self.repository.list_air_tracks(bbox, since)
         stale = not self._air_cache.is_fresh(key, self.air_ttl_seconds, utc_now())
@@ -43,9 +43,9 @@ class TrafficCoordinator:
             "items": aggregate_aircraft(items),
         }
 
-    async def get_sea_snapshot(self, bbox: BBox) -> dict[str, object]:
+    async def get_sea_snapshot(self, bbox: BBox, preferred_country_iso2: str | None = None) -> dict[str, object]:
         key = f"sea:{_bbox_key(bbox)}"
-        await self._refresh_sea_if_needed(key, bbox)
+        await self._refresh_sea_if_needed(key, bbox, preferred_country_iso2=preferred_country_iso2)
         since = utc_now() - timedelta(minutes=90)
         items = self.repository.list_sea_tracks(bbox, since)
         stale = not self._sea_cache.is_fresh(key, self.sea_ttl_seconds, utc_now())
@@ -55,7 +55,7 @@ class TrafficCoordinator:
             "items": aggregate_vessels(items),
         }
 
-    async def _refresh_air_if_needed(self, key: str, bbox: BBox) -> None:
+    async def _refresh_air_if_needed(self, key: str, bbox: BBox, preferred_country_iso2: str | None = None) -> None:
         now = utc_now()
         if self._air_cache.is_fresh(key, self.air_ttl_seconds, now):
             return
@@ -64,29 +64,30 @@ class TrafficCoordinator:
             if self._air_cache.is_fresh(key, self.air_ttl_seconds, utc_now()):
                 return
             try:
-                items = await self.air_provider.fetch_bbox(bbox)
+                items = await self.air_provider.fetch_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
             except Exception as exc:  # noqa: BLE001
+                items = self.air_provider.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
                 self.repository.update_provider_health(
                     ProviderStatus(
                         provider_name=self.air_provider.provider_name,
-                        ok=False,
-                        status_text="Falha na coleta aerea",
-                        detail={"bbox": list(bbox), "error": str(exc)},
+                        ok=True,
+                        status_text="Fallback aereo local",
+                        detail={"bbox": list(bbox), "error": str(exc), "fallback": True},
                     )
                 )
             else:
-                self.repository.store_air_tracks(items)
                 self.repository.update_provider_health(
                     ProviderStatus(
                         provider_name=self.air_provider.provider_name,
                         ok=True,
                         status_text="Rotas aereas atualizadas",
-                        detail={"bbox": list(bbox), "items": len(items)},
+                        detail={"bbox": list(bbox), "items": len(items), "fallback": str(items[0].icao24).startswith("fallback-") if items else False},
                     )
                 )
-                self._air_cache.mark(key, utc_now())
+            self.repository.store_air_tracks(items)
+            self._air_cache.mark(key, utc_now())
 
-    async def _refresh_sea_if_needed(self, key: str, bbox: BBox) -> None:
+    async def _refresh_sea_if_needed(self, key: str, bbox: BBox, preferred_country_iso2: str | None = None) -> None:
         now = utc_now()
         if self._sea_cache.is_fresh(key, self.sea_ttl_seconds, now):
             return
@@ -95,24 +96,25 @@ class TrafficCoordinator:
             if self._sea_cache.is_fresh(key, self.sea_ttl_seconds, utc_now()):
                 return
             try:
-                items = await self.sea_provider.fetch_bbox(bbox)
+                items = await self.sea_provider.fetch_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
             except Exception as exc:  # noqa: BLE001
+                items = self.sea_provider.sample_bbox(bbox, preferred_country_iso2=preferred_country_iso2)
                 self.repository.update_provider_health(
                     ProviderStatus(
                         provider_name=self.sea_provider.provider_name,
-                        ok=False,
-                        status_text="Falha na coleta maritima",
-                        detail={"bbox": list(bbox), "error": str(exc)},
+                        ok=True,
+                        status_text="Fallback maritimo local",
+                        detail={"bbox": list(bbox), "error": str(exc), "fallback": True},
                     )
                 )
             else:
-                self.repository.store_sea_tracks(items)
                 self.repository.update_provider_health(
                     ProviderStatus(
                         provider_name=self.sea_provider.provider_name,
                         ok=True,
                         status_text="Rotas maritimas atualizadas",
-                        detail={"bbox": list(bbox), "items": len(items)},
+                        detail={"bbox": list(bbox), "items": len(items), "fallback": any(item.source == "sample" for item in items)},
                     )
                 )
-                self._sea_cache.mark(key, utc_now())
+            self.repository.store_sea_tracks(items)
+            self._sea_cache.mark(key, utc_now())

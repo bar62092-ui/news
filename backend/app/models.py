@@ -61,6 +61,8 @@ class NewsItem:
     language: str | None = None
     topics: tuple[str, ...] = ()
     fallback_scope: str = "country"
+    summary: str | None = None
+    content_text: str | None = None
 
     def to_dict(self, item_id: int | None = None) -> dict[str, Any]:
         payload = {
@@ -71,6 +73,8 @@ class NewsItem:
             "language": self.language,
             "topics": list(self.topics),
             "fallbackScope": self.fallback_scope,
+            "summary": self.summary,
+            "contentText": self.content_text,
         }
         if item_id is not None:
             payload["id"] = item_id

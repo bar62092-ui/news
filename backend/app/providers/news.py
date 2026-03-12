@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import email.utils
 import re
 import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from html import unescape
 
 import httpx
+from bs4 import BeautifulSoup
 
 from ..models import CountryRecord, NewsItem, ProviderStatus, isoformat, utc_now
 
@@ -29,6 +32,84 @@ def _parse_gdelt_datetime(value: str | None) -> datetime | None:
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip())
+
+
+def _truncate_text(value: str, limit: int = 1000) -> str:
+    compact = _normalize_text(value)
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."
+
+
+def _extract_html_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    soup = BeautifulSoup(value, "html.parser")
+    text = _normalize_text(soup.get_text(" ", strip=True))
+    return text or None
+
+
+def _extract_meta_description(soup: BeautifulSoup) -> str | None:
+    for selector in (
+        {"attrs": {"name": "description"}},
+        {"attrs": {"property": "og:description"}},
+        {"attrs": {"name": "twitter:description"}},
+    ):
+        tag = soup.find("meta", **selector)
+        content = tag.get("content") if tag else None
+        if content:
+            return _truncate_text(unescape(content))
+    return None
+
+
+def _extract_article_text(html_text: str) -> tuple[str | None, str | None]:
+    soup = BeautifulSoup(html_text, "html.parser")
+    for tag in soup(["script", "style", "noscript", "svg", "header", "footer", "nav", "form", "aside"]):
+        tag.decompose()
+
+    summary = _extract_meta_description(soup)
+    container = soup.find("article") or soup.find("main") or soup.body
+    if container is None:
+        return summary, None
+
+    paragraphs: list[str] = []
+    for paragraph in container.find_all("p"):
+        text = _normalize_text(paragraph.get_text(" ", strip=True))
+        if len(text) >= 70:
+            paragraphs.append(text)
+        if len(paragraphs) >= 6:
+            break
+
+    if not paragraphs:
+        lines = [line.strip() for line in container.get_text("\n", strip=True).splitlines()]
+        paragraphs = [line for line in lines if len(line) >= 90][:4]
+
+    content_text = "\n\n".join(paragraphs) if paragraphs else None
+    if summary is None and paragraphs:
+        summary = _truncate_text(paragraphs[0], limit=260)
+    return summary, _truncate_text(content_text, limit=2400) if content_text else None
+
+
+async def _enrich_with_article_body(client: httpx.AsyncClient, item: NewsItem) -> NewsItem:
+    if item.content_text and item.summary:
+        return item
+    try:
+        response = await client.get(item.url, timeout=httpx.Timeout(12.0, connect=8.0))
+        response.raise_for_status()
+    except Exception:  # noqa: BLE001
+        return item
+    summary, content_text = _extract_article_text(response.text)
+    return NewsItem(
+        title=item.title,
+        source=item.source,
+        url=item.url,
+        published_at=item.published_at,
+        language=item.language,
+        topics=item.topics,
+        fallback_scope=item.fallback_scope,
+        summary=item.summary or summary,
+        content_text=item.content_text or content_text,
+    )
 
 
 class GdeltNewsProvider:
@@ -67,6 +148,8 @@ class GdeltNewsProvider:
                     published_at=published_at,
                     language=article.get("language"),
                     fallback_scope="country",
+                    summary=None,
+                    content_text=None,
                 )
             )
         return items
@@ -117,6 +200,7 @@ class GoogleNewsRssProvider:
             published_at = email.utils.parsedate_to_datetime(node.findtext("pubDate", default="")) if node.findtext("pubDate") else utc_now()
             if published_at.tzinfo is None:
                 published_at = published_at.replace(tzinfo=timezone.utc)
+            description_text = _extract_html_text(node.findtext("description", default=""))
             items.append(
                 NewsItem(
                     title=title_text,
@@ -125,6 +209,8 @@ class GoogleNewsRssProvider:
                     published_at=published_at.astimezone(timezone.utc),
                     language=None,
                     fallback_scope=fallback_scope,
+                    summary=_truncate_text(description_text, limit=260) if description_text else None,
+                    content_text=_truncate_text(description_text, limit=1200) if description_text else None,
                 )
             )
             if len(items) >= limit:
@@ -189,7 +275,14 @@ class CombinedNewsProvider:
                     )
                 )
                 merged = dedupe_news(fallback)
-        return NewsFetchResult(items=merged[:limit], statuses=statuses)
+        enriched = await self._enrich_items(merged[:limit])
+        return NewsFetchResult(items=enriched, statuses=statuses)
+
+    async def _enrich_items(self, items: list[NewsItem]) -> list[NewsItem]:
+        if not items:
+            return items
+        tasks = [_enrich_with_article_body(self.rss.client, item) for item in items]
+        return await asyncio.gather(*tasks)
 
 
 def dedupe_news(items: list[NewsItem]) -> list[NewsItem]:

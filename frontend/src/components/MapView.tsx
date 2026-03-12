@@ -1,6 +1,6 @@
-import { PathLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { GeoJsonLayer, PathLayer, ScatterplotLayer } from "@deck.gl/layers";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import maplibregl, { GeoJSONSource, NavigationControl } from "maplibre-gl";
+import maplibregl, { NavigationControl } from "maplibre-gl";
 import { useEffect, useRef } from "react";
 
 import type { AirItem, Bbox, SeaItem } from "../types";
@@ -47,6 +47,13 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const overlayRef = useRef<MapboxOverlay | null>(null);
+  const selectCountryRef = useRef(onCountrySelect);
+  const viewportChangeRef = useRef(onViewportChange);
+
+  useEffect(() => {
+    selectCountryRef.current = onCountrySelect;
+    viewportChangeRef.current = onViewportChange;
+  }, [onCountrySelect, onViewportChange]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -70,53 +77,11 @@ export function MapView({
     map.addControl(overlay);
 
     map.on("load", () => {
-      map.addSource("countries", {
-        type: "geojson",
-        data: buildFeatureCollection(countryFeatures) as never,
-      });
-      map.addLayer({
-        id: "country-fills",
-        type: "fill",
-        source: "countries",
-        paint: {
-          "fill-color": [
-            "case",
-            ["==", ["get", "selected"], 1],
-            "#ffb75d",
-            ["step", ["get", "activity"], "#0f2334", 1, "#184b67", 4, "#2c7da0", 10, "#5cd4c0"],
-          ],
-          "fill-opacity": 0.72,
-        },
-      });
-      map.addLayer({
-        id: "country-lines",
-        type: "line",
-        source: "countries",
-        paint: {
-          "line-color": "#8adbe2",
-          "line-opacity": 0.35,
-          "line-width": ["case", ["==", ["get", "selected"], 1], 1.5, 0.6],
-        },
-      });
-
-      map.on("mouseenter", "country-fills", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "country-fills", () => {
-        map.getCanvas().style.cursor = "";
-      });
-      map.on("click", "country-fills", (event) => {
-        const iso2 = event.features?.[0]?.properties?.iso2;
-        if (typeof iso2 === "string" && iso2) {
-          onCountrySelect(iso2);
-        }
-      });
-
-      notifyViewport(map, onViewportChange);
+      notifyViewport(map, viewportChangeRef.current);
     });
 
     map.on("moveend", () => {
-      notifyViewport(map, onViewportChange);
+      notifyViewport(map, viewportChangeRef.current);
     });
 
     return () => {
@@ -125,18 +90,7 @@ export function MapView({
       map.remove();
       mapRef.current = null;
     };
-  }, [countryFeatures, onCountrySelect, onViewportChange]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) {
-      return;
-    }
-    const source = map.getSource("countries") as GeoJSONSource | undefined;
-    if (source) {
-      source.setData(buildFeatureCollection(countryFeatures) as never);
-    }
-  }, [countryFeatures]);
+  }, []);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -145,6 +99,49 @@ export function MapView({
     }
 
     const layers: any[] = [
+      new GeoJsonLayer<any>({
+        id: "country-polygons",
+        data: buildFeatureCollection(countryFeatures),
+        pickable: true,
+        stroked: true,
+        filled: true,
+        lineWidthUnits: "pixels",
+        getLineWidth: (feature: any) => (feature.properties.selected ? 1.8 : 0.9),
+        getLineColor: (feature: any) =>
+          feature.properties.selected ? [255, 228, 174, 255] : [155, 231, 239, 210],
+        getFillColor: (feature: any) => {
+          if (feature.properties.selected) {
+            return [255, 183, 93, 225];
+          }
+          if (feature.properties.activity >= 10) {
+            return [72, 216, 203, 170];
+          }
+          if (feature.properties.activity >= 4) {
+            return [39, 136, 168, 160];
+          }
+          if (feature.properties.activity >= 1) {
+            return [31, 93, 123, 145];
+          }
+          return [22, 55, 77, 132];
+        },
+        updateTriggers: {
+          getLineColor: [selectedIso2],
+          getFillColor: [selectedIso2, countryFeatures.length],
+        },
+        onHover: (info) => {
+          const map = mapRef.current;
+          if (!map) {
+            return;
+          }
+          map.getCanvas().style.cursor = info.object ? "pointer" : "";
+        },
+        onClick: (info) => {
+          const feature = info.object;
+          if (feature?.properties?.iso2) {
+            selectCountryRef.current(feature.properties.iso2);
+          }
+        },
+      }),
       new ScatterplotLayer<CountryMarker>({
         id: "country-markers",
         data: countryMarkers,
@@ -160,7 +157,7 @@ export function MapView({
         onClick: (info) => {
           const item = info.object;
           if (item) {
-            onCountrySelect(item.iso2);
+            selectCountryRef.current(item.iso2);
           }
         },
       }),
@@ -212,7 +209,7 @@ export function MapView({
     }
 
     overlay.setProps({ layers });
-  }, [airItems, countryMarkers, onCountrySelect, seaItems, showRoutes]);
+  }, [airItems, countryFeatures, countryMarkers, seaItems, selectedIso2, showRoutes]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -237,7 +234,6 @@ export function MapView({
 
   return <div className="map-canvas" ref={containerRef} aria-label="Mapa global de rotas e países" />;
 }
-
 function buildFeatureCollection(features: CountryFeature[]): GeoJSON.FeatureCollection<GeoJSON.Geometry, CountryFeature["properties"]> {
   return {
     type: "FeatureCollection",

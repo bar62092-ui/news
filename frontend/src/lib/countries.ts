@@ -26,6 +26,7 @@ export type CountryMarker = {
   iso2: string;
   name: string;
   position: [number, number];
+  bbox: [number, number, number, number];
   activity: number;
   newsCount: number;
   airCount: number;
@@ -88,6 +89,7 @@ export function buildCountryMapData(countries: CountrySummary[], selectedIso2: s
       iso2,
       name: summary.name,
       position: centroid,
+      bbox: bounds,
       activity,
       newsCount: summary.newsCount,
       airCount: summary.airCount,

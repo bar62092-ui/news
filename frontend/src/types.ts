@@ -47,6 +47,8 @@ export type NewsItem = {
   language: string | null;
   topics: string[];
   fallbackScope: string;
+  summary: string | null;
+  contentText: string | null;
   fetchedAt: string;
 };
 

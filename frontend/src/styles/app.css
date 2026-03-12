@@ -253,7 +253,7 @@ button {
     radial-gradient(circle at 82% 22%, rgba(255, 171, 84, 0.12), transparent 20%),
     linear-gradient(180deg, rgba(6, 18, 27, 0.1), rgba(6, 18, 27, 0));
   pointer-events: none;
-  z-index: 1;
+  z-index: 0;
 }
 
 .map-overlay {
@@ -265,7 +265,7 @@ button {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  z-index: 3;
+  z-index: 4;
   padding: 14px 18px;
   border-radius: 22px;
   background: rgba(6, 18, 27, 0.72);
@@ -278,6 +278,8 @@ button {
 }
 
 .map-canvas {
+  position: relative;
+  z-index: 2;
   height: 100%;
   width: 100%;
 }
@@ -399,14 +401,50 @@ button {
   border-color: rgba(255, 188, 102, 0.35);
 }
 
-.news-card a {
+.news-card.open {
+  border-color: rgba(95, 204, 201, 0.36);
+  background: rgba(9, 26, 40, 0.92);
+}
+
+.news-toggle {
   display: grid;
   gap: 8px;
+  width: 100%;
   padding: 15px 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .news-card strong {
   font-size: 1rem;
+}
+
+.news-body {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.news-body p {
+  margin: 0;
+  color: rgba(231, 244, 255, 0.82);
+}
+
+.news-summary {
+  color: #9de2dd;
+  font-weight: 600;
+}
+
+.source-link {
+  display: inline-flex;
+  width: fit-content;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 188, 102, 0.26);
+  color: #ffcf92;
 }
 
 @media (max-width: 1180px) {

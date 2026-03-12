@@ -59,6 +59,8 @@ def app(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
                     published_at=utc_now(),
                     language="en",
                     topics=("Routes", "Logistics"),
+                    summary="Fixture summary for the first article.",
+                    content_text="Fixture paragraph one.\n\nFixture paragraph two.",
                 ),
                 NewsItem(
                     title=f"{country.name} ports and flights react",
@@ -67,6 +69,8 @@ def app(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
                     published_at=utc_now(),
                     language="en",
                     topics=("Ports", "Flights"),
+                    summary="Fixture summary for the second article.",
+                    content_text="Another fixture paragraph.",
                 ),
             ],
             statuses=[
@@ -80,13 +84,13 @@ def app(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
             TopicCluster(label="Ports", score=1.7, source_count=1, last_seen_at=utc_now()),
         ]
 
-    async def fake_fetch_air(bbox):
+    async def fake_fetch_air(bbox, preferred_country_iso2=None):
         return [
             AirTrackPoint(
                 icao24="abc123",
                 callsign="WW100",
                 origin_country="Brazil",
-                country_iso2="BR",
+                country_iso2=preferred_country_iso2 or "BR",
                 longitude=-46.63,
                 latitude=-23.55,
                 altitude=10100,
@@ -96,12 +100,12 @@ def app(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
             )
         ]
 
-    async def fake_fetch_sea(bbox):
+    async def fake_fetch_sea(bbox, preferred_country_iso2=None):
         return [
             SeaTrackPoint(
                 mmsi="111000111",
                 vessel_name="Fixture Carrier",
-                country_iso2="BR",
+                country_iso2=preferred_country_iso2 or "BR",
                 longitude=-43.18,
                 latitude=-22.9,
                 speed=14.2,

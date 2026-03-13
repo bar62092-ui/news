@@ -297,12 +297,17 @@ export default function App() {
         <div className="hero-badges">
           <span className="hero-pill">{shouldShowRoutes ? "rotas ligadas" : "visao global"}</span>
           <span className="hero-pill">{selectedIso2 ? `pais ${selectedIso2}` : "sem pais ativo"}</span>
+          <span className="hero-pill">{lastSnapshotAt ? formatDate(lastSnapshotAt) : "aguardando live"}</span>
         </div>
       </header>
 
       <StatusStrip providers={providers} generatedAt={lastSnapshotAt} socketState={socketState} />
 
       <section className="watchlist-rail" aria-label="Observatorios prioritarios">
+        <div className="rail-header">
+          <p className="eyebrow">Sinais</p>
+          <strong>Paises monitorados</strong>
+        </div>
         {watchlistCountries.map((country) => (
           <button
             key={country.iso2}
@@ -354,6 +359,17 @@ export default function App() {
 
         <CountryPanel country={activeCountry} news={newsPayload} topics={topicItems} socketState={socketState} />
       </main>
+
+      <footer className="ticker-bar" aria-label="Fluxo ao vivo">
+        <span className="ticker-label">live</span>
+        <div className="ticker-track">
+          {watchlistCountries.map((country) => (
+            <span className="ticker-item" key={country.iso2}>
+              {country.name}: {country.newsCount} noticias · {country.airCount + country.seaCount} rotas
+            </span>
+          ))}
+        </div>
+      </footer>
     </div>
   );
 }

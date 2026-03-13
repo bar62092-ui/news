@@ -81,8 +81,9 @@ export function MapView({
     if (!containerRef.current || mapRef.current) {
       return;
     }
+    const container = containerRef.current;
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container,
       style: MAP_STYLE as never,
       center: [0, 18],
       zoom: 1.3,
@@ -97,6 +98,10 @@ export function MapView({
     const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
     overlayRef.current = overlay;
     map.addControl(overlay);
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserver.observe(container);
 
     const setInteractionState = (nextValue: boolean) => {
       if (isInteractingRef.current === nextValue) {
@@ -107,6 +112,7 @@ export function MapView({
     };
 
     map.on("load", () => {
+      map.resize();
       notifyViewport(map, viewportChangeRef.current);
     });
 
@@ -119,6 +125,7 @@ export function MapView({
     });
 
     return () => {
+      resizeObserver.disconnect();
       overlayRef.current?.finalize();
       overlayRef.current = null;
       map.remove();

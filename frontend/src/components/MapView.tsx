@@ -3,8 +3,9 @@ import { MapboxOverlay } from "@deck.gl/mapbox";
 import maplibregl, { NavigationControl } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { AirItem, Bbox, SeaItem } from "../types";
 import type { CountryFeature, CountryMarker } from "../lib/countries";
+import { INFRASTRUCTURE_HUBS, INFRASTRUCTURE_ROUTES } from "../lib/infrastructure";
+import type { AirItem, Bbox, SeaItem } from "../types";
 
 type MapViewProps = {
   countryFeatures: CountryFeature[];
@@ -17,6 +18,11 @@ type MapViewProps = {
   resetToken: number;
   showAirLayer: boolean;
   showSeaLayer: boolean;
+  showCableRoutes: boolean;
+  showOilRoutes: boolean;
+  showLandingStations: boolean;
+  showDatacenters: boolean;
+  showIxps: boolean;
   onCountrySelect: (iso2: string) => void;
   onViewportChange: (bbox: Bbox, zoom: number) => void;
 };
@@ -24,13 +30,32 @@ type MapViewProps = {
 const MAP_STYLE = {
   version: 8,
   glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-  sources: {},
+  sources: {
+    "carto-dark": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+    },
+  },
   layers: [
+    {
+      id: "carto-base",
+      type: "raster",
+      source: "carto-dark",
+      minzoom: 0,
+      maxzoom: 19,
+    },
     {
       id: "background",
       type: "background",
       paint: {
-        "background-color": "#07131d",
+        "background-color": "#020804",
+        "background-opacity": 0.2,
       },
     },
   ],
@@ -52,6 +77,11 @@ export function MapView({
   resetToken,
   showAirLayer,
   showSeaLayer,
+  showCableRoutes,
+  showOilRoutes,
+  showLandingStations,
+  showDatacenters,
+  showIxps,
   onCountrySelect,
   onViewportChange,
 }: MapViewProps) {
@@ -94,7 +124,7 @@ export function MapView({
       center: [0, 18],
       zoom: 1.3,
       minZoom: 1,
-      maxZoom: 8,
+      maxZoom: 8.5,
       renderWorldCopies: false,
       attributionControl: false,
     });
@@ -104,6 +134,7 @@ export function MapView({
     const overlay = new MapboxOverlay({ interleaved: true, layers: [] });
     overlayRef.current = overlay;
     map.addControl(overlay);
+
     const resizeObserver = new ResizeObserver(() => {
       map.resize();
     });
@@ -153,23 +184,23 @@ export function MapView({
         stroked: true,
         filled: true,
         lineWidthUnits: "pixels",
-        getLineWidth: (feature: any) => (feature.properties.selected ? 1.8 : 0.9),
+        getLineWidth: (feature: any) => (feature.properties.selected ? 2.1 : 0.8),
         getLineColor: (feature: any) =>
-          feature.properties.selected ? [255, 228, 174, 255] : [155, 231, 239, 210],
+          feature.properties.selected ? [250, 205, 70, 255] : [74, 226, 122, 150],
         getFillColor: (feature: any) => {
           if (feature.properties.selected) {
-            return [255, 183, 93, 225];
+            return [175, 112, 28, 212];
           }
-          if (feature.properties.activity >= 10) {
-            return [72, 216, 203, 170];
+          if (feature.properties.activity >= 25) {
+            return [23, 91, 42, 110];
           }
-          if (feature.properties.activity >= 4) {
-            return [39, 136, 168, 160];
+          if (feature.properties.activity >= 8) {
+            return [11, 54, 24, 92];
           }
           if (feature.properties.activity >= 1) {
-            return [31, 93, 123, 145];
+            return [8, 29, 15, 72];
           }
-          return [22, 55, 77, 132];
+          return [3, 14, 8, 56];
         },
         updateTriggers: {
           getLineColor: [selectedIso2],
@@ -196,9 +227,9 @@ export function MapView({
         stroked: !isInteracting,
         radiusUnits: "pixels",
         getPosition: (item) => item.position,
-        getRadius: (item) => Math.max(4, Math.min(18, 6 + item.activity * 0.25)),
-        getFillColor: (item) => (item.selected ? [255, 194, 121, 220] : [98, 205, 218, 170]),
-        getLineColor: () => [8, 18, 29, 255],
+        getRadius: (item) => Math.max(3.5, Math.min(18, 5 + item.activity * 0.22)),
+        getFillColor: (item) => (item.selected ? [255, 212, 88, 236] : [55, 231, 127, 184]),
+        getLineColor: () => [2, 10, 6, 255],
         lineWidthUnits: "pixels",
         getLineWidth: (item) => (item.selected ? 2 : 1),
         onClick: (info) => {
@@ -210,13 +241,53 @@ export function MapView({
       }),
     ];
 
+    if (showCableRoutes) {
+      layers.push(
+        new PathLayer<any>({
+          id: "infra-cables",
+          data: INFRASTRUCTURE_ROUTES.filter((item) => item.kind === "cable"),
+          getPath: (item) => item.path,
+          getColor: () => [77, 199, 255, 156],
+          getWidth: 2,
+          widthUnits: "pixels",
+          opacity: 0.56,
+        }),
+      );
+    }
+
+    if (showOilRoutes) {
+      layers.push(
+        new PathLayer<any>({
+          id: "infra-oil",
+          data: INFRASTRUCTURE_ROUTES.filter((item) => item.kind === "oil"),
+          getPath: (item) => item.path,
+          getColor: () => [255, 197, 61, 164],
+          getWidth: 2.2,
+          widthUnits: "pixels",
+          opacity: 0.62,
+        }),
+      );
+    }
+
+    if (showLandingStations) {
+      layers.push(buildInfrastructureLayer("infra-landing", "landing", [92, 198, 255, 220]));
+    }
+
+    if (showDatacenters) {
+      layers.push(buildInfrastructureLayer("infra-datacenters", "datacenter", [98, 255, 162, 220]));
+    }
+
+    if (showIxps) {
+      layers.push(buildInfrastructureLayer("infra-ixps", "ixp", [255, 179, 78, 220]));
+    }
+
     if (showAirLayer && !isInteracting) {
       layers.push(
         new PathLayer<AirItem>({
           id: "air-paths",
           data: renderedAirItems,
           getPath: (item) => item.track,
-          getColor: () => [255, 123, 69, 190],
+          getColor: () => [255, 120, 62, 196],
           getWidth: 2,
           widthUnits: "pixels",
           opacity: 0.82,
@@ -232,7 +303,7 @@ export function MapView({
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
           getRadius: 3.5,
-          getFillColor: () => [255, 165, 122, 255],
+          getFillColor: () => [255, 188, 122, 255],
         }),
       );
     }
@@ -243,10 +314,10 @@ export function MapView({
           id: "sea-paths",
           data: renderedSeaItems,
           getPath: (item) => item.track,
-          getColor: () => [76, 181, 245, 190],
+          getColor: () => [67, 176, 255, 194],
           getWidth: 2,
           widthUnits: "pixels",
-          opacity: 0.72,
+          opacity: 0.76,
         }),
       );
     }
@@ -259,13 +330,27 @@ export function MapView({
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
           getRadius: 4,
-          getFillColor: (item) => (item.source === "sample" ? [190, 222, 255, 220] : [72, 176, 255, 255]),
+          getFillColor: (item) => (item.source === "sample" ? [182, 220, 255, 214] : [100, 201, 255, 255]),
         }),
       );
     }
 
     overlay.setProps({ layers });
-  }, [countryCollection, countryMarkers, isInteracting, renderedAirItems, renderedSeaItems, selectedIso2, showAirLayer, showSeaLayer]);
+  }, [
+    countryCollection,
+    countryMarkers,
+    isInteracting,
+    renderedAirItems,
+    renderedSeaItems,
+    selectedIso2,
+    showAirLayer,
+    showCableRoutes,
+    showDatacenters,
+    showIxps,
+    showLandingStations,
+    showOilRoutes,
+    showSeaLayer,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -308,7 +393,25 @@ export function MapView({
 
   return <div className="map-canvas" ref={containerRef} aria-label="Mapa global de rotas e países" />;
 }
-function buildFeatureCollection(features: CountryFeature[]): GeoJSON.FeatureCollection<GeoJSON.Geometry, CountryFeature["properties"]> {
+
+function buildInfrastructureLayer(id: string, kind: "landing" | "datacenter" | "ixp", color: [number, number, number, number]) {
+  return new ScatterplotLayer<any>({
+    id,
+    data: INFRASTRUCTURE_HUBS.filter((item) => item.kind === kind),
+    pickable: false,
+    radiusUnits: "pixels",
+    getPosition: (item) => item.position,
+    getRadius: (item) => 2.5 + item.intensity * 0.45,
+    getFillColor: () => color,
+    getLineColor: () => [2, 10, 6, 255],
+    lineWidthUnits: "pixels",
+    getLineWidth: 1,
+  });
+}
+
+function buildFeatureCollection(
+  features: CountryFeature[],
+): GeoJSON.FeatureCollection<GeoJSON.Geometry, CountryFeature["properties"]> {
   return {
     type: "FeatureCollection",
     features,

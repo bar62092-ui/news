@@ -116,9 +116,105 @@ def app(test_settings: Settings, monkeypatch: pytest.MonkeyPatch):
             )
         ]
 
+    async def fake_dashboard_payload():
+        now = utc_now().isoformat()
+        return {
+            "generatedAt": now,
+            "signals": [
+                {
+                    "iso2": "BR",
+                    "name": "Brasil",
+                    "score": 14,
+                    "level": "medium",
+                    "newsCount": 2,
+                    "airCount": 1,
+                    "seaCount": 1,
+                    "summary": "Topicos: Routes, Ports",
+                    "lastRefreshAt": now,
+                }
+            ],
+            "events": [
+                {
+                    "id": "signal-BR",
+                    "kind": "signal",
+                    "title": "Brazil logistics routes expand",
+                    "summary": "Brasil soma 14 pontos.",
+                    "tone": "medium",
+                    "countryIso2": "BR",
+                    "countryName": "Brasil",
+                    "source": "Fixture News",
+                    "publishedAt": now,
+                    "tags": ["signal"],
+                }
+            ],
+            "stocks": [
+                {
+                    "symbol": "^BVSP",
+                    "label": "Ibovespa",
+                    "price": 128430.0,
+                    "change": 240.0,
+                    "changePercent": 0.19,
+                    "currency": "pts",
+                    "updatedAt": now,
+                    "trend": "up",
+                    "board": "stocks",
+                    "source": "Fixture",
+                }
+            ],
+            "markets": [
+                {
+                    "symbol": "CL=F",
+                    "label": "Petroleo WTI",
+                    "price": 78.5,
+                    "change": -0.8,
+                    "changePercent": -1.0,
+                    "currency": "USD",
+                    "updatedAt": now,
+                    "trend": "down",
+                    "board": "markets",
+                    "source": "Fixture",
+                }
+            ],
+            "channels": [
+                {
+                    "id": "channel-br",
+                    "source": "Fixture Daily",
+                    "headline": "Brazil ports and flights react",
+                    "countryIso2": "BR",
+                    "countryName": "Brasil",
+                    "publishedAt": now,
+                    "status": "no ar",
+                    "summary": "Another fixture paragraph.",
+                }
+            ],
+            "outbreaks": [
+                {
+                    "id": "outbreak-1",
+                    "title": "Regional outbreak signal",
+                    "summary": "Fixture outbreak summary.",
+                    "publishedAt": now,
+                    "source": "WHO",
+                    "url": "https://example.com/outbreak",
+                    "tone": "medium",
+                    "region": "Global",
+                }
+            ],
+            "defcon": {
+                "level": 4,
+                "tone": "medium",
+                "score": 48.0,
+                "summary": "Fixture defcon summary.",
+                "updatedAt": now,
+            },
+            "infrastructure": [
+                {"id": "submarine-cables", "label": "Cabos submarinos", "kind": "route", "count": 5}
+            ],
+        }
+
     monkeypatch.setattr(services.news, "start_watchlist_loop", fake_watchlist_loop)
     monkeypatch.setattr(services.news.provider, "fetch_country_news", fake_fetch_country_news)
     monkeypatch.setattr(services.news.trend_provider, "fetch_country_trends", fake_fetch_trends)
     monkeypatch.setattr(services.traffic.air_provider, "fetch_bbox", fake_fetch_air)
     monkeypatch.setattr(services.traffic.sea_provider, "fetch_bbox", fake_fetch_sea)
+    monkeypatch.setattr(services.programs, "get_dashboard_payload", fake_dashboard_payload)
     return app

@@ -8,6 +8,7 @@ import type {
   TrafficSnapshot,
   AirItem,
   SeaItem,
+  DashboardPayload,
 } from "./types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, "") || "";
@@ -58,4 +59,8 @@ export async function fetchSeaTraffic(bbox: Bbox): Promise<TrafficSnapshot<SeaIt
 
 export async function fetchProviders(): Promise<ProvidersPayload> {
   return getJson<ProvidersPayload>("/api/providers");
+}
+
+export async function fetchDashboard(): Promise<DashboardPayload> {
+  return getJson<DashboardPayload>("/api/dashboard");
 }

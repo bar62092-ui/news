@@ -1,9 +1,17 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchBootstrap, fetchCountry, fetchCountryNews, fetchCountryTopics, fetchProviders, getWebSocketUrl } from "./api";
-import { CountryPanel } from "./components/CountryPanel";
+import {
+  fetchBootstrap,
+  fetchCountry,
+  fetchCountryNews,
+  fetchCountryTopics,
+  fetchDashboard,
+  fetchProviders,
+  getWebSocketUrl,
+} from "./api";
 import { MapView } from "./components/MapView";
-import { StatusStrip } from "./components/StatusStrip";
+import { ProgramPanel } from "./components/ProgramPanel";
+import { SignalChainView } from "./components/SignalChainView";
 import { buildCountryMapData, localizeCountryName } from "./lib/countries";
 import type {
   AirItem,
@@ -11,25 +19,42 @@ import type {
   Bbox,
   CountryNewsPayload,
   CountrySummary,
+  DashboardPayload,
   LiveSnapshot,
+  ProgramId,
   ProviderHealth,
   SeaItem,
   TopicItem,
+  ViewMode,
 } from "./types";
 
 type FocusMode = "all" | "air" | "sea" | "news";
+type InfrastructureToggle = "cables" | "oil" | "landing" | "datacenters" | "ixps";
 
-const WATCHLIST = ["BR", "US", "GB", "DE", "FR", "CN"];
 const WORLD_BBOX: Bbox = [-179.9, -60, 179.9, 85];
-const MODE_OPTIONS: Array<{ id: FocusMode; label: string; summary: string }> = [
-  { id: "all", label: "MAPA", summary: "Aereo + maritimo + noticias" },
-  { id: "air", label: "AEREO", summary: "Rotas aereas e atividade de voo" },
-  { id: "sea", label: "MARITIMO", summary: "Rotas maritimas e atividade naval" },
-  { id: "news", label: "NOTICIAS", summary: "Noticias e tendencias por pais" },
+const VIEW_OPTIONS: Array<{ id: ViewMode; label: string }> = [
+  { id: "map", label: "O MAPA" },
+  { id: "chain", label: "A CADEIA" },
+];
+const MAP_MODE_OPTIONS: Array<{ id: FocusMode; label: string }> = [
+  { id: "all", label: "Tudo" },
+  { id: "air", label: "Aéreo" },
+  { id: "sea", label: "Marítimo" },
+  { id: "news", label: "Notícias" },
+];
+const PROGRAM_OPTIONS: Array<{ id: ProgramId; label: string; hot?: boolean }> = [
+  { id: "signals", label: "SINAIS", hot: true },
+  { id: "chat", label: "SALA" },
+  { id: "stocks", label: "BOLSAS" },
+  { id: "tv", label: "TV" },
+  { id: "markets", label: "MERCADOS" },
+  { id: "defcon", label: "DEFCON" },
+  { id: "outbreaks", label: "SURTOS" },
 ];
 
 export default function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [providers, setProviders] = useState<ProviderHealth[]>([]);
   const [selectedIso2, setSelectedIso2] = useState<string | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<CountrySummary | null>(null);
@@ -41,14 +66,24 @@ export default function App() {
   const [viewport, setViewport] = useState<Bbox>(WORLD_BBOX);
   const [zoom, setZoom] = useState(1.3);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [focusMode, setFocusMode] = useState<FocusMode>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("map");
+  const [mapMode, setMapMode] = useState<FocusMode>("all");
+  const [activeProgram, setActiveProgram] = useState<ProgramId>("signals");
   const [reconnectToken, setReconnectToken] = useState(0);
   const [resetToken, setResetToken] = useState(0);
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null);
+  const [infraVisibility, setInfraVisibility] = useState<Record<InfrastructureToggle, boolean>>({
+    cables: true,
+    oil: false,
+    landing: true,
+    datacenters: false,
+    ixps: false,
+  });
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectTokenRef = useRef(0);
+  const activeCountryRef = useRef<CountrySummary | null>(null);
   const isReady = bootstrap !== null;
   const worldBbox = bootstrap?.worldBbox ?? WORLD_BBOX;
 
@@ -71,46 +106,45 @@ export default function App() {
   );
   const activeCountry = selectedCountry ?? selectedCountryFromBootstrap;
   const selectedBbox = activeCountry?.bbox ?? selectedMapCountry?.bbox ?? null;
-  const shouldShowRoutes = zoom >= 3 || Boolean(activeCountry);
-  const watchlistCountries = useMemo(
-    () => WATCHLIST.map((iso2) => mergedCountries.find((country) => country.iso2 === iso2)).filter(Boolean) as CountrySummary[],
-    [mergedCountries],
-  );
-  const topSignalCountry = useMemo(
-    () => [...watchlistCountries].sort((left, right) => signalValue(right) - signalValue(left))[0] ?? null,
-    [watchlistCountries],
-  );
+  const shouldShowRoutes = viewMode === "map" && (zoom >= 2.6 || Boolean(activeCountry));
   const deferredAirItems = useDeferredValue(airItems);
   const deferredSeaItems = useDeferredValue(seaItems);
-
-  const modeConfig = useMemo(() => getModeConfig(focusMode), [focusMode]);
+  const mapConfig = useMemo(() => getMapConfig(mapMode), [mapMode]);
   const subscriptionLayers = useMemo(
-    () => buildSubscriptionLayers(focusMode, shouldShowRoutes, selectedIso2),
-    [focusMode, selectedIso2, shouldShowRoutes],
+    () => buildSubscriptionLayers(mapMode, shouldShowRoutes, selectedIso2),
+    [mapMode, selectedIso2, shouldShowRoutes],
   );
+  const topSignal = dashboard?.signals[0] ?? null;
+  const tickerEvents = dashboard?.events ?? [];
+  const visibleProviders = providers.slice(0, 7);
+
+  useEffect(() => {
+    activeCountryRef.current = activeCountry;
+  }, [activeCountry]);
 
   useEffect(() => {
     let active = true;
 
-    async function loadBootstrap() {
+    async function loadInitialData() {
       try {
-        const payload = await fetchBootstrap();
+        const [bootstrapPayload, dashboardPayload] = await Promise.all([fetchBootstrap(), fetchDashboard()]);
         if (!active) {
           return;
         }
-        setBootstrap(payload);
-        setProviders(payload.providers);
-        setViewport(payload.worldBbox);
-        setLastSnapshotAt(payload.generatedAt);
+        setBootstrap(bootstrapPayload);
+        setDashboard(localizeDashboardPayload(dashboardPayload));
+        setProviders(bootstrapPayload.providers);
+        setViewport(bootstrapPayload.worldBbox);
+        setLastSnapshotAt(bootstrapPayload.generatedAt);
       } catch (error) {
         if (!active) {
           return;
         }
-        setErrorText(error instanceof Error ? error.message : "Falha ao carregar bootstrap");
+        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o painel inicial");
       }
     }
 
-    void loadBootstrap();
+    void loadInitialData();
     return () => {
       active = false;
     };
@@ -166,7 +200,7 @@ export default function App() {
         if (!active) {
           return;
         }
-        setErrorText(error instanceof Error ? error.message : "Falha ao carregar pais");
+        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o país");
       }
     }
 
@@ -247,7 +281,7 @@ export default function App() {
           }
           if (payload.news) {
             setNewsPayload((current) => ({
-              country: current?.country ?? activeCountry,
+              country: current?.country ?? activeCountryRef.current,
               items: payload.news?.items ?? current?.items ?? [],
               stale: payload.news?.stale ?? current?.stale ?? false,
               lastRefreshAt: payload.news?.lastRefreshAt ?? current?.lastRefreshAt ?? null,
@@ -304,10 +338,13 @@ export default function App() {
       return;
     }
     const interval = window.setInterval(() => {
-      void fetchProviders()
-        .then((payload) => setProviders(payload.items))
+      void Promise.all([fetchProviders(), fetchDashboard()])
+        .then(([providerPayload, dashboardPayload]) => {
+          setProviders(providerPayload.items);
+          setDashboard(localizeDashboardPayload(dashboardPayload));
+        })
         .catch(() => {
-          // Mantem o ultimo estado conhecido em falhas transitarias.
+          // Mantém o último estado conhecido em falhas transitórias.
         });
     }, 30000);
     return () => {
@@ -317,6 +354,7 @@ export default function App() {
 
   function handleSelectCountry(iso2: string): void {
     setSelectedIso2(iso2);
+    setActiveProgram("signals");
   }
 
   function handleResetWorldView(): void {
@@ -331,143 +369,201 @@ export default function App() {
     setResetToken((current) => current + 1);
   }
 
+  function toggleInfrastructure(filter: InfrastructureToggle): void {
+    setInfraVisibility((current) => ({
+      ...current,
+      [filter]: !current[filter],
+    }));
+  }
+
   return (
     <div className="app-shell">
-      <div className="background-glow glow-left" />
-      <div className="background-glow glow-right" />
+      <div className="noise-layer" aria-hidden="true" />
+      <div className="vignette-layer" aria-hidden="true" />
+      <div className="grid-layer" aria-hidden="true" />
+      <div className="scanline-beam" aria-hidden="true" />
+      <div className="frame-corner top-left" aria-hidden="true" />
+      <div className="frame-corner top-right" aria-hidden="true" />
+      <div className="frame-corner bottom-left" aria-hidden="true" />
+      <div className="frame-corner bottom-right" aria-hidden="true" />
 
-      <header className="app-header">
-        <section className="brand-card">
-          <p className="eyebrow">Monitor global de rotas e noticias</p>
+      <header className="top-bar">
+        <div className="brand-block">
+          <p className="eyebrow">Signal chain</p>
           <h1>World Watch</h1>
-          <p className="lead-copy">
-            Painel em quase tempo real com paises, rotas aereas, rotas maritimas e noticias agregadas.
-          </p>
-          <div className="brand-meta">
-            <span className="hero-pill">{socketState === "open" ? "live" : "reconectando"}</span>
-            <span className="hero-pill">{selectedIso2 ? `pais ${selectedIso2}` : "mundo"}</span>
+          <p className="brand-copy">Monitor global em português com rotas, sinais, surtos, mercados e notícias inline.</p>
+        </div>
+
+        <nav className="view-tabs" aria-label="Modo de visualização">
+          {VIEW_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              className={viewMode === option.id ? "view-tab active" : "view-tab"}
+              onClick={() => setViewMode(option.id)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </nav>
+
+        <div className="top-meta">
+          <div className="top-meta-copy">
+            <span className={`live-indicator ${socketState === "open" ? "open" : "closed"}`}>{socketState === "open" ? "live" : "reconectando"}</span>
+            <strong>{topSignal ? `${topSignal.name} em destaque` : "Radar global ativo"}</strong>
+            <span>{lastSnapshotAt ? `Último snapshot ${formatDate(lastSnapshotAt)}` : "Aguardando snapshot"}</span>
           </div>
-        </section>
-
-        <section className="header-main">
-          <nav className="mode-bar" aria-label="Modos de leitura">
-            {MODE_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                className={focusMode === option.id ? "mode-button active" : "mode-button"}
-                type="button"
-                onClick={() => setFocusMode(option.id)}
-              >
-                <strong>{option.label}</strong>
-                <span>{option.summary}</span>
-              </button>
+          <div className="top-provider-row">
+            {visibleProviders.map((provider) => (
+              <span className={`status-chip ${provider.ok ? "ok" : "error"}`} key={provider.providerName}>
+                {provider.providerName}
+              </span>
             ))}
-          </nav>
-
-          <StatusStrip providers={providers} generatedAt={lastSnapshotAt} socketState={socketState} />
-        </section>
+          </div>
+        </div>
       </header>
 
-      {errorText ? <div className="error-banner">{errorText}</div> : null}
+      {errorText ? <div className="alert-banner error">{errorText}</div> : null}
       {newsPayload?.stale || socketState !== "open" ? (
-        <div className="warning-banner">
-          Servindo cache local enquanto as fontes ou o WebSocket se estabilizam. Ultimo snapshot:{" "}
-          {lastSnapshotAt ? formatDate(lastSnapshotAt) : "sem dado"}.
+        <div className="alert-banner warning">
+          Servindo cache local enquanto as fontes estabilizam. Último snapshot: {lastSnapshotAt ? formatDate(lastSnapshotAt) : "sem dado"}.
         </div>
       ) : null}
 
-      <main className="monitor-grid">
-        <aside className="left-rail">
-          <section className="side-card">
-            <div className="rail-header">
-              <div>
-                <p className="eyebrow">Sinais</p>
-                <strong>Paises monitorados</strong>
-              </div>
-              <span>{topSignalCountry ? `top ${topSignalCountry.iso2}` : "sem lider"}</span>
-            </div>
-
-            <div className="watchlist-rail" aria-label="Observatorios prioritarios">
-              {watchlistCountries.map((country) => (
-                <button
-                  key={country.iso2}
-                  className={country.iso2 === selectedIso2 ? "watch-pill active" : "watch-pill"}
-                  onClick={() => handleSelectCountry(country.iso2)}
-                  type="button"
-                >
-                  <div className="watch-pill-head">
-                    <strong>{country.name}</strong>
-                    <small className={`signal-chip ${signalTone(country)}`}>{signalLabel(country)}</small>
-                  </div>
-                  <span>
-                    {country.newsCount} noticias · {country.airCount + country.seaCount} rotas · sinal {signalValue(country)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="side-card">
-            <div className="section-heading">
-              <h3>Acoes rapidas</h3>
-              <span>{MODE_OPTIONS.find((item) => item.id === focusMode)?.label ?? "MAPA"}</span>
-            </div>
-            <div className="action-grid">
-              <button className="action-button" type="button" onClick={handleResetWorldView}>
-                Mundo
-              </button>
-              <button className="action-button" type="button" onClick={() => handleSelectCountry("BR")}>
-                Brasil
-              </button>
-              <button className="action-button" type="button" onClick={() => handleSelectCountry("US")}>
-                EUA
-              </button>
-              {topSignalCountry ? (
-                <button className="action-button action-button-strong" type="button" onClick={() => handleSelectCountry(topSignalCountry.iso2)}>
-                  Top sinal
-                </button>
-              ) : null}
-            </div>
-          </section>
+      <main className="monitor-layout">
+        <aside className="program-dock" aria-label="Programas">
+          {PROGRAM_OPTIONS.map((program, index) => (
+            <button
+              key={program.id}
+              className={activeProgram === program.id ? "dock-button active" : "dock-button"}
+              onClick={() => setActiveProgram(program.id)}
+              type="button"
+            >
+              <span className="dock-index">{index + 1}</span>
+              <span className="dock-label">{program.label}</span>
+              <span className="dock-count">{programCount(program.id, dashboard)}</span>
+              {program.hot ? <span className="dock-hot">HOT</span> : null}
+            </button>
+          ))}
         </aside>
 
-        <section className="map-shell">
-          <div className="map-overlay">
-            <div>
-              <p className="eyebrow">Camada ativa</p>
-              <strong>{MODE_OPTIONS.find((item) => item.id === focusMode)?.summary ?? "Mapa global"}</strong>
-            </div>
-            <span>{activeCountry ? activeCountry.name : "Visao global"}</span>
-          </div>
+        <section className="stage-shell">
+          {viewMode === "map" ? (
+            <div className="map-stage">
+              <div className="overlay-card stage-card-left">
+                <p className="eyebrow">Camada ativa</p>
+                <strong>{mapModeLabel(mapMode)}</strong>
+                <span>{activeCountry ? activeCountry.name : "Visão global"}</span>
+              </div>
 
-          <MapView
-            countryFeatures={mapData.features}
-            countryMarkers={mapData.markers}
-            airItems={deferredAirItems}
-            seaItems={deferredSeaItems}
-            selectedIso2={selectedIso2}
-            selectedBbox={selectedBbox}
-            worldBbox={worldBbox}
-            resetToken={resetToken}
-            showAirLayer={shouldShowRoutes && modeConfig.showAir}
-            showSeaLayer={shouldShowRoutes && modeConfig.showSea}
-            onCountrySelect={handleSelectCountry}
-            onViewportChange={(nextBbox, nextZoom) => {
-              setViewport(nextBbox);
-              setZoom(nextZoom);
-            }}
-          />
+              <div className="overlay-card stage-card-right">
+                <div className="overlay-group">
+                  {MAP_MODE_OPTIONS.map((option) => (
+                    <button
+                      key={option.id}
+                      className={mapMode === option.id ? "mini-toggle active" : "mini-toggle"}
+                      onClick={() => setMapMode(option.id)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="overlay-group">
+                  <button className={infraVisibility.cables ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("cables")} type="button">
+                    Cabos
+                  </button>
+                  <button className={infraVisibility.oil ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("oil")} type="button">
+                    Petróleo
+                  </button>
+                  <button className={infraVisibility.landing ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("landing")} type="button">
+                    Landing
+                  </button>
+                  <button
+                    className={infraVisibility.datacenters ? "mini-toggle active" : "mini-toggle"}
+                    onClick={() => toggleInfrastructure("datacenters")}
+                    type="button"
+                  >
+                    DC
+                  </button>
+                  <button className={infraVisibility.ixps ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("ixps")} type="button">
+                    IXP
+                  </button>
+                </div>
+              </div>
+
+              <div className="mini-signal-board">
+                <div className="section-heading">
+                  <h3>Sinais</h3>
+                  <span>{dashboard?.signals.length ?? 0}</span>
+                </div>
+                <div className="mini-signal-list">
+                  {(dashboard?.signals.slice(0, 4) ?? []).map((signal) => (
+                    <button
+                      className={signal.iso2 === selectedIso2 ? "mini-signal-row active" : "mini-signal-row"}
+                      key={signal.iso2}
+                      onClick={() => handleSelectCountry(signal.iso2)}
+                      type="button"
+                    >
+                      <div className="card-topline">
+                        <strong>{signal.name}</strong>
+                        <span className={`tone-pill ${signal.level}`}>{signal.level}</span>
+                      </div>
+                      <span>{signal.score} pontos</span>
+                    </button>
+                  ))}
+                  <button className="mini-signal-row reset-row" onClick={handleResetWorldView} type="button">
+                    Resetar visão global
+                  </button>
+                </div>
+              </div>
+
+              <MapView
+                countryFeatures={mapData.features}
+                countryMarkers={mapData.markers}
+                airItems={deferredAirItems}
+                seaItems={deferredSeaItems}
+                selectedIso2={selectedIso2}
+                selectedBbox={selectedBbox}
+                worldBbox={worldBbox}
+                resetToken={resetToken}
+                showAirLayer={shouldShowRoutes && mapConfig.showAir}
+                showSeaLayer={shouldShowRoutes && mapConfig.showSea}
+                showCableRoutes={infraVisibility.cables}
+                showOilRoutes={infraVisibility.oil}
+                showLandingStations={infraVisibility.landing}
+                showDatacenters={infraVisibility.datacenters}
+                showIxps={infraVisibility.ixps}
+                onCountrySelect={handleSelectCountry}
+                onViewportChange={(nextBbox, nextZoom) => {
+                  setViewport(nextBbox);
+                  setZoom(nextZoom);
+                }}
+              />
+            </div>
+          ) : (
+            <SignalChainView dashboard={dashboard} onSelectCountry={handleSelectCountry} selectedIso2={selectedIso2} />
+          )}
         </section>
 
-        <CountryPanel country={activeCountry} news={newsPayload} topics={topicItems} socketState={socketState} />
+        <ProgramPanel
+          activeProgram={activeProgram}
+          country={activeCountry}
+          news={newsPayload}
+          topics={topicItems}
+          socketState={socketState}
+          dashboard={dashboard}
+          providers={providers}
+          onSelectCountry={handleSelectCountry}
+        />
       </main>
 
       <footer className="ticker-bar" aria-label="Fluxo ao vivo">
-        <span className="ticker-label">live</span>
+        <span className="ticker-label">LIVE</span>
         <div className="ticker-track">
-          {watchlistCountries.map((country) => (
-            <span className="ticker-item" key={country.iso2}>
-              {country.name}: {country.newsCount} noticias · {country.airCount + country.seaCount} rotas · sinal {signalValue(country)}
+          {tickerEvents.map((event) => (
+            <span className="ticker-item" key={event.id}>
+              {event.title} · {event.source}
             </span>
           ))}
         </div>
@@ -496,7 +592,7 @@ function buildSubscriptionLayers(focusMode: FocusMode, shouldShowRoutes: boolean
   return layers;
 }
 
-function getModeConfig(focusMode: FocusMode): { showAir: boolean; showSea: boolean } {
+function getMapConfig(focusMode: FocusMode): { showAir: boolean; showSea: boolean } {
   if (focusMode === "air") {
     return { showAir: true, showSea: false };
   }
@@ -532,34 +628,47 @@ function formatDate(value: string): string {
   }).format(new Date(value));
 }
 
-function signalValue(country: CountrySummary): number {
-  return country.newsCount + country.airCount + country.seaCount;
+function programCount(program: ProgramId, dashboard: DashboardPayload | null): number | string {
+  if (!dashboard) {
+    return "--";
+  }
+  switch (program) {
+    case "signals":
+      return dashboard.signals.length;
+    case "chat":
+      return dashboard.events.length;
+    case "stocks":
+      return dashboard.stocks.length;
+    case "tv":
+      return dashboard.channels.length;
+    case "markets":
+      return dashboard.markets.length;
+    case "defcon":
+      return dashboard.defcon.level;
+    case "outbreaks":
+      return dashboard.outbreaks.length;
+  }
 }
 
-function signalLabel(country: CountrySummary): string {
-  const score = signalValue(country);
-  if (score >= 160) {
-    return "critico";
-  }
-  if (score >= 70) {
-    return "alto";
-  }
-  if (score >= 25) {
-    return "moderado";
-  }
-  return "baixo";
+function mapModeLabel(mapMode: FocusMode): string {
+  const item = MAP_MODE_OPTIONS.find((option) => option.id === mapMode);
+  return item?.label ?? "Tudo";
 }
 
-function signalTone(country: CountrySummary): string {
-  const score = signalValue(country);
-  if (score >= 160) {
-    return "critical";
-  }
-  if (score >= 70) {
-    return "high";
-  }
-  if (score >= 25) {
-    return "medium";
-  }
-  return "low";
+function localizeDashboardPayload(payload: DashboardPayload): DashboardPayload {
+  return {
+    ...payload,
+    signals: payload.signals.map((signal) => ({
+      ...signal,
+      name: localizeCountryName(signal.iso2, signal.name),
+    })),
+    events: payload.events.map((event) => ({
+      ...event,
+      countryName: event.countryIso2 ? localizeCountryName(event.countryIso2, event.countryName || event.countryIso2) : event.countryName,
+    })),
+    channels: payload.channels.map((channel) => ({
+      ...channel,
+      countryName: channel.countryIso2 ? localizeCountryName(channel.countryIso2, channel.countryName || channel.countryIso2) : channel.countryName,
+    })),
+  };
 }

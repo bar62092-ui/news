@@ -18,6 +18,7 @@ from ..database import Database
 from ..models import BBox, LiveSubscription, utc_now
 from ..providers.news import CombinedNewsProvider, GdeltNewsProvider, GoogleNewsRssProvider
 from ..providers.traffic import AisStreamProvider, OpenSkyProvider
+from ..providers.programs import MonitorProgramsProvider
 from ..providers.trends import NewsClusterTrendProvider, XTrendProvider
 from ..repository import WorldWatchRepository
 
@@ -32,6 +33,7 @@ class AppServices:
     http_client: httpx.AsyncClient
     news: NewsRefreshCoordinator
     traffic: TrafficCoordinator
+    programs: MonitorProgramsProvider
     x_trends: XTrendProvider
     watchlist_task: asyncio.Task[None] | None = None
 
@@ -77,6 +79,12 @@ def build_services(settings: Settings) -> AppServices:
         http_client=client,
         news=news,
         traffic=traffic,
+        programs=MonitorProgramsProvider(
+            client=client,
+            repository=repository,
+            google_news_locale=settings.google_news_locale,
+            watchlist_countries=settings.watchlist_countries,
+        ),
         x_trends=XTrendProvider(),
     )
 
@@ -162,6 +170,10 @@ def create_api_router(services: AppServices) -> APIRouter:
             "generatedAt": utc_now().isoformat(),
             "items": services.repository.list_provider_health(),
         }
+
+    @router.get("/dashboard")
+    async def get_dashboard() -> dict[str, Any]:
+        return await services.programs.get_dashboard_payload()
 
     @router.get("/healthz")
     async def get_health() -> dict[str, Any]:

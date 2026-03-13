@@ -20,11 +20,11 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
   if (!country) {
     return (
       <aside className="country-panel empty-panel">
-        <p className="eyebrow">Observatorio global</p>
-        <h2>Escolha um pais no mapa</h2>
+        <p className="eyebrow">Observatório global</p>
+        <h2>Escolha um país no mapa</h2>
         <p>
-          Os pontos indicam paises com noticias, trilhas e coletas recentes. Em zoom global o painel funciona como centro de
-          triagem; ao selecionar um pais o mapa aproxima e puxa rotas do bbox ativo.
+          Os pontos indicam países com notícias, trilhas e coletas recentes. Em zoom global o painel funciona como centro de
+          triagem; ao selecionar um país o mapa aproxima e puxa rotas do bbox ativo.
         </p>
       </aside>
     );
@@ -34,7 +34,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
     <aside className="country-panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Pais ativo</p>
+          <p className="eyebrow">País ativo</p>
           <h2>{country.name}</h2>
         </div>
         <span className={`socket-pill ${socketState}`}>{socketState === "open" ? "live" : socketState}</span>
@@ -42,15 +42,15 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
 
       <div className="metric-grid">
         <article className="metric-card">
-          <span>Noticias 24h</span>
+          <span>Notícias 24h</span>
           <strong>{country.newsCount}</strong>
         </article>
         <article className="metric-card">
-          <span>Rotas aereas</span>
+          <span>Rotas aéreas</span>
           <strong>{country.airCount}</strong>
         </article>
         <article className="metric-card">
-          <span>Rotas maritimas</span>
+          <span>Rotas marítimas</span>
           <strong>{country.seaCount}</strong>
         </article>
         <article className="metric-card">
@@ -61,7 +61,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
 
       <section className="panel-section">
         <div className="section-heading">
-          <h3>Tendencias locais</h3>
+          <h3>Tendências locais</h3>
           <span>{topics.length} clusters</span>
         </div>
         <div className="topic-list">
@@ -80,7 +80,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
 
       <section className="panel-section">
         <div className="section-heading">
-          <h3>Noticias recentes</h3>
+          <h3>Notícias recentes</h3>
           <span>{news?.stale ? "cache stale" : "cache fresco"}</span>
         </div>
         {news?.items?.length ? (
@@ -95,7 +95,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
                     <span>
                       {item.source} · {formatDate(item.publishedAt)}
                     </span>
-                    <small>{item.fallbackScope === "global" ? "fallback global" : "fonte do pais"}</small>
+                    <small>{item.fallbackScope === "global" ? "fallback global" : "fonte do país"}</small>
                   </button>
                   {isOpen ? (
                     <div className="news-body">
@@ -103,10 +103,10 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
                       {paragraphs.length ? (
                         paragraphs.map((paragraph, index) => <p key={`${item.id}-${index}`}>{paragraph}</p>)
                       ) : (
-                        <p className="muted-copy">Sem corpo extraido ainda para esta materia.</p>
+                        <p className="muted-copy">Sem corpo extraído ainda para esta matéria.</p>
                       )}
                       <a className="source-link" href={item.url} target="_blank" rel="noreferrer">
-                        Abrir fonte original
+                        Fonte original
                       </a>
                     </div>
                   ) : null}
@@ -115,7 +115,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
             })}
           </ul>
         ) : (
-          <p className="muted-copy">Ainda sem noticias carregadas para este pais.</p>
+          <p className="muted-copy">Ainda sem notícias carregadas para este país.</p>
         )}
       </section>
     </aside>

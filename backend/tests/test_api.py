@@ -19,6 +19,12 @@ def test_http_endpoints_and_websocket(app):
         assert topics_response.status_code == 200
         assert topics_response.json()["items"]
 
+        dashboard_response = client.get("/api/dashboard")
+        assert dashboard_response.status_code == 200
+        assert dashboard_response.json()["signals"]
+        assert dashboard_response.json()["stocks"]
+        assert dashboard_response.json()["defcon"]["level"] >= 1
+
         air_response = client.get("/api/traffic/air", params={"bbox": "-60,-35,-30,5", "countryIso2": "BR"})
         assert air_response.status_code == 200
         assert air_response.json()["items"]

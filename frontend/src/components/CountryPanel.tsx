@@ -23,8 +23,8 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
         <p className="eyebrow">Observatório global</p>
         <h2>Escolha um país no mapa</h2>
         <p>
-          Os pontos indicam países com notícias, trilhas e coletas recentes. Em zoom global o painel funciona como centro de
-          triagem; ao selecionar um país o mapa aproxima e puxa rotas do bbox ativo.
+          Os pontos indicam países com coleta recente. Em visão global o mapa resume a atividade; ao selecionar um país, o
+          sistema aproxima o recorte e mostra as rotas do bbox ativo.
         </p>
       </aside>
     );
@@ -37,7 +37,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
           <p className="eyebrow">País ativo</p>
           <h2>{country.name}</h2>
         </div>
-        <span className={`socket-pill ${socketState}`}>{socketState === "open" ? "live" : socketState}</span>
+        <span className={`socket-pill ${socketState}`}>{formatSocketState(socketState)}</span>
       </div>
 
       <div className="metric-grid">
@@ -81,7 +81,7 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
       <section className="panel-section">
         <div className="section-heading">
           <h3>Notícias recentes</h3>
-          <span>{news?.stale ? "cache stale" : "cache fresco"}</span>
+          <span>{news?.stale ? "cache antigo" : "cache fresco"}</span>
         </div>
         {news?.items?.length ? (
           <ul className="news-list">
@@ -141,4 +141,14 @@ function formatDate(value: string | null | undefined): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatSocketState(value: string): string {
+  if (value === "open") {
+    return "ao vivo";
+  }
+  if (value === "connecting") {
+    return "conectando";
+  }
+  return "reconectando";
 }

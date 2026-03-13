@@ -54,8 +54,8 @@ const MAP_STYLE = {
       id: "background",
       type: "background",
       paint: {
-        "background-color": "#020804",
-        "background-opacity": 0.2,
+        "background-color": "#06090d",
+        "background-opacity": 0.16,
       },
     },
   ],
@@ -184,23 +184,23 @@ export function MapView({
         stroked: true,
         filled: true,
         lineWidthUnits: "pixels",
-        getLineWidth: (feature: any) => (feature.properties.selected ? 2.1 : 0.8),
+        getLineWidth: (feature: any) => (feature.properties.selected ? 1.8 : 0.8),
         getLineColor: (feature: any) =>
-          feature.properties.selected ? [250, 205, 70, 255] : [74, 226, 122, 150],
+          feature.properties.selected ? [239, 245, 255, 220] : [82, 111, 146, 132],
         getFillColor: (feature: any) => {
           if (feature.properties.selected) {
-            return [175, 112, 28, 212];
+            return [86, 113, 145, 152];
           }
           if (feature.properties.activity >= 25) {
-            return [23, 91, 42, 110];
+            return [25, 50, 66, 110];
           }
           if (feature.properties.activity >= 8) {
-            return [11, 54, 24, 92];
+            return [20, 40, 54, 96];
           }
           if (feature.properties.activity >= 1) {
-            return [8, 29, 15, 72];
+            return [15, 28, 40, 86];
           }
-          return [3, 14, 8, 56];
+          return [10, 19, 28, 74];
         },
         updateTriggers: {
           getLineColor: [selectedIso2],
@@ -227,9 +227,9 @@ export function MapView({
         stroked: !isInteracting,
         radiusUnits: "pixels",
         getPosition: (item) => item.position,
-        getRadius: (item) => Math.max(3.5, Math.min(18, 5 + item.activity * 0.22)),
-        getFillColor: (item) => (item.selected ? [255, 212, 88, 236] : [55, 231, 127, 184]),
-        getLineColor: () => [2, 10, 6, 255],
+        getRadius: (item) => Math.max(3, Math.min(13, 4.5 + item.activity * 0.18)),
+        getFillColor: (item) => (item.selected ? [244, 247, 255, 222] : [107, 196, 255, 176]),
+        getLineColor: () => [10, 18, 24, 255],
         lineWidthUnits: "pixels",
         getLineWidth: (item) => (item.selected ? 2 : 1),
         onClick: (info) => {
@@ -247,10 +247,10 @@ export function MapView({
           id: "infra-cables",
           data: INFRASTRUCTURE_ROUTES.filter((item) => item.kind === "cable"),
           getPath: (item) => item.path,
-          getColor: () => [77, 199, 255, 156],
-          getWidth: 2,
+          getColor: () => [93, 171, 245, 136],
+          getWidth: 1.6,
           widthUnits: "pixels",
-          opacity: 0.56,
+          opacity: 0.5,
         }),
       );
     }
@@ -261,24 +261,24 @@ export function MapView({
           id: "infra-oil",
           data: INFRASTRUCTURE_ROUTES.filter((item) => item.kind === "oil"),
           getPath: (item) => item.path,
-          getColor: () => [255, 197, 61, 164],
-          getWidth: 2.2,
+          getColor: () => [215, 170, 94, 144],
+          getWidth: 1.8,
           widthUnits: "pixels",
-          opacity: 0.62,
+          opacity: 0.54,
         }),
       );
     }
 
     if (showLandingStations) {
-      layers.push(buildInfrastructureLayer("infra-landing", "landing", [92, 198, 255, 220]));
+      layers.push(buildInfrastructureLayer("infra-landing", "landing", [116, 188, 255, 206]));
     }
 
     if (showDatacenters) {
-      layers.push(buildInfrastructureLayer("infra-datacenters", "datacenter", [98, 255, 162, 220]));
+      layers.push(buildInfrastructureLayer("infra-datacenters", "datacenter", [125, 224, 166, 204]));
     }
 
     if (showIxps) {
-      layers.push(buildInfrastructureLayer("infra-ixps", "ixp", [255, 179, 78, 220]));
+      layers.push(buildInfrastructureLayer("infra-ixps", "ixp", [239, 188, 113, 204]));
     }
 
     if (showAirLayer && !isInteracting) {
@@ -287,10 +287,10 @@ export function MapView({
           id: "air-paths",
           data: renderedAirItems,
           getPath: (item) => item.track,
-          getColor: () => [255, 120, 62, 196],
-          getWidth: 2,
+          getColor: () => [255, 153, 94, 178],
+          getWidth: 1.8,
           widthUnits: "pixels",
-          opacity: 0.82,
+          opacity: 0.76,
         }),
       );
     }
@@ -302,8 +302,8 @@ export function MapView({
           data: renderedAirItems,
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
-          getRadius: 3.5,
-          getFillColor: () => [255, 188, 122, 255],
+          getRadius: 3.2,
+          getFillColor: () => [255, 204, 146, 235],
         }),
       );
     }
@@ -314,10 +314,10 @@ export function MapView({
           id: "sea-paths",
           data: renderedSeaItems,
           getPath: (item) => item.track,
-          getColor: () => [67, 176, 255, 194],
-          getWidth: 2,
+          getColor: () => [100, 181, 255, 168],
+          getWidth: 1.8,
           widthUnits: "pixels",
-          opacity: 0.76,
+          opacity: 0.7,
         }),
       );
     }
@@ -329,8 +329,8 @@ export function MapView({
           data: renderedSeaItems,
           radiusUnits: "pixels",
           getPosition: (item) => item.position,
-          getRadius: 4,
-          getFillColor: (item) => (item.source === "sample" ? [182, 220, 255, 214] : [100, 201, 255, 255]),
+          getRadius: 3.5,
+          getFillColor: (item) => (item.source === "sample" ? [178, 212, 240, 196] : [118, 201, 255, 236]),
         }),
       );
     }
@@ -383,9 +383,9 @@ export function MapView({
           [selectedBbox[2], selectedBbox[3]],
         ],
         {
-          padding: 48,
-          duration: 900,
-          maxZoom: 4.1,
+          padding: 72,
+          duration: 850,
+          maxZoom: 3.4,
         },
       );
     }
@@ -403,7 +403,7 @@ function buildInfrastructureLayer(id: string, kind: "landing" | "datacenter" | "
     getPosition: (item) => item.position,
     getRadius: (item) => 2.5 + item.intensity * 0.45,
     getFillColor: () => color,
-    getLineColor: () => [2, 10, 6, 255],
+    getLineColor: () => [10, 18, 24, 255],
     lineWidthUnits: "pixels",
     getLineWidth: 1,
   });

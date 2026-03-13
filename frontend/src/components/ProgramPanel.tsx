@@ -8,7 +8,6 @@ import type {
   ProgramId,
   ProviderHealth,
   TopicItem,
-  Tone,
 } from "../types";
 
 type ProgramPanelProps = {
@@ -24,7 +23,7 @@ type ProgramPanelProps = {
 
 const PROGRAM_TITLES: Record<ProgramId, string> = {
   signals: "Sinais",
-  chat: "Sala",
+  chat: "Sala de situação",
   stocks: "Bolsas",
   tv: "TV",
   markets: "Mercados",
@@ -53,16 +52,16 @@ export function ProgramPanel({
           <p className="eyebrow">Programa ativo</p>
           <h2>{PROGRAM_TITLES[activeProgram]}</h2>
         </div>
-        <span className={`socket-pill ${socketState}`}>{socketState === "open" ? "live" : socketState}</span>
+        <span className={`socket-pill ${socketState}`}>{formatSocketState(socketState)}</span>
       </div>
 
       {!dashboard ? (
         <section className="panel-section">
-          <p className="muted-copy">Carregando painéis e sinais agregados...</p>
+          <p className="muted-copy">Carregando painéis, sinais agregados e o resumo editorial.</p>
         </section>
-      ) : null}
-
-      {dashboard ? renderProgramContent(activeProgram, dashboard, providers, onSelectCountry) : null}
+      ) : (
+        renderProgramContent(activeProgram, dashboard, providers, onSelectCountry)
+      )}
     </aside>
   );
 }
@@ -96,13 +95,14 @@ function renderProgramContent(
             ))}
           </div>
         </section>
+
         <section className="panel-section">
           <div className="section-heading">
             <h3>Feed resumido</h3>
             <span>{dashboard.events.length} eventos</span>
           </div>
           <div className="event-list">
-            {dashboard.events.slice(0, 5).map((event) => (
+            {dashboard.events.slice(0, 6).map((event) => (
               <article className="program-card" key={event.id}>
                 <div className="card-topline">
                   <span className={`tone-pill ${event.tone}`}>{event.kind}</span>
@@ -169,7 +169,7 @@ function renderProgramContent(
         <section className="panel-section">
           <div className="section-heading">
             <h3>Leitura tática</h3>
-            <span>defcon {dashboard.defcon.level}</span>
+            <span>DEFCON {dashboard.defcon.level}</span>
           </div>
           <article className="program-card">
             <div className="card-topline">
@@ -177,9 +177,7 @@ function renderProgramContent(
               <span>{dashboard.defcon.score} pts</span>
             </div>
             <strong>{dashboard.defcon.summary}</strong>
-            <p>
-              O painel combina pressão de sinais, surtos, mercado e estabilidade das fontes para uma leitura rápida do ambiente.
-            </p>
+            <p>O painel combina pressão de sinais, surtos, mercado e estabilidade das fontes para uma leitura rápida do ambiente.</p>
           </article>
         </section>
       </>
@@ -192,11 +190,12 @@ function renderProgramContent(
       <>
         <section className="panel-section">
           <div className="defcon-hero">
-            <span className={`tone-pill ${dashboard.defcon.tone}`}>defcon {dashboard.defcon.level}</span>
+            <span className={`tone-pill ${dashboard.defcon.tone}`}>DEFCON {dashboard.defcon.level}</span>
             <strong>{dashboard.defcon.summary}</strong>
             <p>Score global: {dashboard.defcon.score} · atualizado {formatDate(dashboard.defcon.updatedAt)}</p>
           </div>
         </section>
+
         <section className="panel-section">
           <div className="section-heading">
             <h3>Fontes críticas</h3>
@@ -311,4 +310,14 @@ function formatPrice(value: number, currency: string): string {
     }).format(value);
   }
   return `${new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 }).format(value)} ${currency}`;
+}
+
+function formatSocketState(value: string): string {
+  if (value === "open") {
+    return "ao vivo";
+  }
+  if (value === "connecting") {
+    return "conectando";
+  }
+  return "reconectando";
 }

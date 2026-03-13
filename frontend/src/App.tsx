@@ -33,8 +33,8 @@ type InfrastructureToggle = "cables" | "oil" | "landing" | "datacenters" | "ixps
 
 const WORLD_BBOX: Bbox = [-179.9, -60, 179.9, 85];
 const VIEW_OPTIONS: Array<{ id: ViewMode; label: string }> = [
-  { id: "map", label: "O MAPA" },
-  { id: "chain", label: "A CADEIA" },
+  { id: "map", label: "O mapa" },
+  { id: "chain", label: "A cadeia" },
 ];
 const MAP_MODE_OPTIONS: Array<{ id: FocusMode; label: string }> = [
   { id: "all", label: "Tudo" },
@@ -43,13 +43,13 @@ const MAP_MODE_OPTIONS: Array<{ id: FocusMode; label: string }> = [
   { id: "news", label: "Notícias" },
 ];
 const PROGRAM_OPTIONS: Array<{ id: ProgramId; label: string; hot?: boolean }> = [
-  { id: "signals", label: "SINAIS", hot: true },
-  { id: "chat", label: "SALA" },
-  { id: "stocks", label: "BOLSAS" },
+  { id: "signals", label: "Sinais", hot: true },
+  { id: "chat", label: "Sala" },
+  { id: "stocks", label: "Bolsas" },
   { id: "tv", label: "TV" },
-  { id: "markets", label: "MERCADOS" },
+  { id: "markets", label: "Mercados" },
   { id: "defcon", label: "DEFCON" },
-  { id: "outbreaks", label: "SURTOS" },
+  { id: "outbreaks", label: "Surtos" },
 ];
 
 export default function App() {
@@ -115,8 +115,12 @@ export default function App() {
     [mapMode, selectedIso2, shouldShowRoutes],
   );
   const topSignal = dashboard?.signals[0] ?? null;
-  const tickerEvents = dashboard?.events ?? [];
-  const visibleProviders = providers.slice(0, 7);
+  const visibleProviders = providers.slice(0, 5);
+  const tickerEvents = dashboard?.events.slice(0, 10) ?? [];
+  const sidebarSignals = dashboard?.signals.slice(0, 8) ?? [];
+  const quickFocusSignals = dashboard?.signals.slice(0, 3) ?? [];
+  const activeRouteCount = airItems.length + seaItems.length;
+  const infrastructureSnapshot = dashboard?.infrastructure.slice(0, 4) ?? [];
 
   useEffect(() => {
     activeCountryRef.current = activeCountry;
@@ -381,17 +385,14 @@ export default function App() {
       <div className="noise-layer" aria-hidden="true" />
       <div className="vignette-layer" aria-hidden="true" />
       <div className="grid-layer" aria-hidden="true" />
-      <div className="scanline-beam" aria-hidden="true" />
-      <div className="frame-corner top-left" aria-hidden="true" />
-      <div className="frame-corner top-right" aria-hidden="true" />
-      <div className="frame-corner bottom-left" aria-hidden="true" />
-      <div className="frame-corner bottom-right" aria-hidden="true" />
 
-      <header className="top-bar">
-        <div className="brand-block">
-          <p className="eyebrow">Signal chain</p>
+      <header className="command-bar">
+        <div className="brand-strip">
+          <p className="eyebrow">Observatório global</p>
           <h1>World Watch</h1>
-          <p className="brand-copy">Monitor global em português com rotas, sinais, surtos, mercados e notícias inline.</p>
+          <p className="brand-copy">
+            {topSignal ? `${topSignal.name} em destaque com ${topSignal.score} pontos.` : "Rotas, sinais e notícias em quase tempo real."}
+          </p>
         </div>
 
         <nav className="view-tabs" aria-label="Modo de visualização">
@@ -407,13 +408,17 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="top-meta">
-          <div className="top-meta-copy">
-            <span className={`live-indicator ${socketState === "open" ? "open" : "closed"}`}>{socketState === "open" ? "live" : "reconectando"}</span>
-            <strong>{topSignal ? `${topSignal.name} em destaque` : "Radar global ativo"}</strong>
-            <span>{lastSnapshotAt ? `Último snapshot ${formatDate(lastSnapshotAt)}` : "Aguardando snapshot"}</span>
+        <div className="status-cluster">
+          <div className="status-main">
+            <span className={`live-pill ${socketState === "open" ? "open" : "closed"}`}>
+              {socketState === "open" ? "ao vivo" : "reconectando"}
+            </span>
+            <strong>{topSignal ? topSignal.summary : "Radar global ativo"}</strong>
           </div>
-          <div className="top-provider-row">
+          <span className="status-time">
+            {lastSnapshotAt ? `Último snapshot ${formatDate(lastSnapshotAt)}` : "Aguardando snapshot"}
+          </span>
+          <div className="provider-strip">
             {visibleProviders.map((provider) => (
               <span className={`status-chip ${provider.ok ? "ok" : "error"}`} key={provider.providerName}>
                 {provider.providerName}
@@ -430,38 +435,76 @@ export default function App() {
         </div>
       ) : null}
 
-      <main className="monitor-layout">
-        <aside className="program-dock" aria-label="Programas">
-          {PROGRAM_OPTIONS.map((program, index) => (
-            <button
-              key={program.id}
-              className={activeProgram === program.id ? "dock-button active" : "dock-button"}
-              onClick={() => setActiveProgram(program.id)}
-              type="button"
-            >
-              <span className="dock-index">{index + 1}</span>
-              <span className="dock-label">{program.label}</span>
-              <span className="dock-count">{programCount(program.id, dashboard)}</span>
-              {program.hot ? <span className="dock-hot">HOT</span> : null}
-            </button>
-          ))}
-        </aside>
+      <main className="workspace">
+        <aside className="sidebar">
+          <section className="sidebar-block program-dock" aria-label="Programas">
+            <div className="sidebar-heading">
+              <h2>Programas</h2>
+              <span>{PROGRAM_OPTIONS.length}</span>
+            </div>
+            <div className="dock-grid">
+              {PROGRAM_OPTIONS.map((program, index) => (
+                <button
+                  key={program.id}
+                  className={activeProgram === program.id ? "dock-button active" : "dock-button"}
+                  onClick={() => setActiveProgram(program.id)}
+                  type="button"
+                >
+                  <span className="dock-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="dock-label">{program.label}</span>
+                  <span className="dock-count">{programCount(program.id, dashboard)}</span>
+                  {program.hot ? <span className="dock-hot">hot</span> : null}
+                </button>
+              ))}
+            </div>
+          </section>
 
-        <section className="stage-shell">
-          {viewMode === "map" ? (
-            <div className="map-stage">
-              <div className="overlay-card stage-card-left">
-                <p className="eyebrow">Camada ativa</p>
-                <strong>{mapModeLabel(mapMode)}</strong>
-                <span>{activeCountry ? activeCountry.name : "Visão global"}</span>
+          <section className="sidebar-block watchlist-panel">
+            <div className="sidebar-heading">
+              <h2>Países em foco</h2>
+              <span>{sidebarSignals.length || mergedCountries.length}</span>
+            </div>
+            {sidebarSignals.length ? (
+              <div className="watchlist">
+                {sidebarSignals.map((signal) => (
+                  <button
+                    className={signal.iso2 === selectedIso2 ? "watch-button active" : "watch-button"}
+                    key={signal.iso2}
+                    onClick={() => handleSelectCountry(signal.iso2)}
+                    type="button"
+                  >
+                    <div className="watch-copy">
+                      <strong>{signal.name}</strong>
+                      <span>{signal.summary}</span>
+                    </div>
+                    <div className="watch-meta">
+                      <span className={`tone-pill ${signal.level}`}>{signal.level}</span>
+                      <small>{signal.newsCount} notícias</small>
+                    </div>
+                  </button>
+                ))}
               </div>
+            ) : (
+              <p className="muted-copy">Carregando países monitorados e o ranking de sinais.</p>
+            )}
+            <button className="ghost-action" onClick={handleResetWorldView} type="button">
+              Voltar ao mundo
+            </button>
+          </section>
 
-              <div className="overlay-card stage-card-right">
-                <div className="overlay-group">
+          <section className="sidebar-block filter-panel">
+            <div className="sidebar-heading">
+              <h2>{viewMode === "map" ? "Camadas" : "Resumo"}</h2>
+              <span>{viewMode === "map" ? mapModeLabel(mapMode) : `DEFCON ${dashboard?.defcon.level ?? "--"}`}</span>
+            </div>
+
+            {viewMode === "map" ? (
+              <>
+                <div className="filter-grid">
                   {MAP_MODE_OPTIONS.map((option) => (
                     <button
                       key={option.id}
-                      className={mapMode === option.id ? "mini-toggle active" : "mini-toggle"}
+                      className={mapMode === option.id ? "filter-chip active" : "filter-chip"}
                       onClick={() => setMapMode(option.id)}
                       type="button"
                     >
@@ -469,53 +512,132 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <div className="overlay-group">
-                  <button className={infraVisibility.cables ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("cables")} type="button">
+
+                <div className="sidebar-subheading">
+                  <span>Infraestrutura</span>
+                </div>
+                <div className="filter-grid">
+                  <button
+                    className={infraVisibility.cables ? "filter-chip active" : "filter-chip"}
+                    onClick={() => toggleInfrastructure("cables")}
+                    type="button"
+                  >
                     Cabos
                   </button>
-                  <button className={infraVisibility.oil ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("oil")} type="button">
+                  <button
+                    className={infraVisibility.oil ? "filter-chip active" : "filter-chip"}
+                    onClick={() => toggleInfrastructure("oil")}
+                    type="button"
+                  >
                     Petróleo
                   </button>
-                  <button className={infraVisibility.landing ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("landing")} type="button">
+                  <button
+                    className={infraVisibility.landing ? "filter-chip active" : "filter-chip"}
+                    onClick={() => toggleInfrastructure("landing")}
+                    type="button"
+                  >
                     Landing
                   </button>
                   <button
-                    className={infraVisibility.datacenters ? "mini-toggle active" : "mini-toggle"}
+                    className={infraVisibility.datacenters ? "filter-chip active" : "filter-chip"}
                     onClick={() => toggleInfrastructure("datacenters")}
                     type="button"
                   >
-                    DC
+                    Data centers
                   </button>
-                  <button className={infraVisibility.ixps ? "mini-toggle active" : "mini-toggle"} onClick={() => toggleInfrastructure("ixps")} type="button">
-                    IXP
+                  <button
+                    className={infraVisibility.ixps ? "filter-chip active" : "filter-chip"}
+                    onClick={() => toggleInfrastructure("ixps")}
+                    type="button"
+                  >
+                    IXPs
                   </button>
+                </div>
+
+                <div className="infra-list">
+                  {infrastructureSnapshot.map((item) => (
+                    <div className="infra-row" key={item.id}>
+                      <span>{item.label}</span>
+                      <strong>{item.count}</strong>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="summary-stack">
+                <div className="summary-row">
+                  <span>Top sinal</span>
+                  <strong>{topSignal?.name ?? "Aguardando dados"}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Surtos críticos</span>
+                  <strong>{dashboard?.outbreaks.filter((item) => item.tone === "critical" || item.tone === "high").length ?? 0}</strong>
+                </div>
+                <div className="summary-row">
+                  <span>Mercados</span>
+                  <strong>{dashboard?.markets.length ?? 0}</strong>
+                </div>
+              </div>
+            )}
+          </section>
+        </aside>
+
+        <section className="stage-shell">
+          {viewMode === "map" ? (
+            <div className="map-stage">
+              <div className="stage-hud hud-left">
+                <p className="eyebrow">Foco atual</p>
+                <strong>{activeCountry ? activeCountry.name : "Mundo"}</strong>
+                <span>
+                  {mapModeLabel(mapMode)} ·{" "}
+                  {shouldShowRoutes ? `${activeRouteCount} rotas no recorte ativo` : "atividade agregada por país"}
+                </span>
+              </div>
+
+              <div className="stage-hud hud-right">
+                <div className="hud-actions">
+                  <button className="hud-button" onClick={handleResetWorldView} type="button">
+                    Mundo
+                  </button>
+                  {quickFocusSignals.map((signal) => (
+                    <button className="hud-button" key={signal.iso2} onClick={() => handleSelectCountry(signal.iso2)} type="button">
+                      {signal.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="stage-metrics">
+                  <article className="stage-metric">
+                    <span>Notícias</span>
+                    <strong>{activeCountry?.newsCount ?? topSignal?.newsCount ?? 0}</strong>
+                  </article>
+                  <article className="stage-metric">
+                    <span>Aéreo</span>
+                    <strong>{airItems.length}</strong>
+                  </article>
+                  <article className="stage-metric">
+                    <span>Marítimo</span>
+                    <strong>{seaItems.length}</strong>
+                  </article>
                 </div>
               </div>
 
-              <div className="mini-signal-board">
-                <div className="section-heading">
-                  <h3>Sinais</h3>
-                  <span>{dashboard?.signals.length ?? 0}</span>
-                </div>
-                <div className="mini-signal-list">
-                  {(dashboard?.signals.slice(0, 4) ?? []).map((signal) => (
-                    <button
-                      className={signal.iso2 === selectedIso2 ? "mini-signal-row active" : "mini-signal-row"}
-                      key={signal.iso2}
-                      onClick={() => handleSelectCountry(signal.iso2)}
-                      type="button"
-                    >
-                      <div className="card-topline">
-                        <strong>{signal.name}</strong>
-                        <span className={`tone-pill ${signal.level}`}>{signal.level}</span>
-                      </div>
-                      <span>{signal.score} pontos</span>
-                    </button>
-                  ))}
-                  <button className="mini-signal-row reset-row" onClick={handleResetWorldView} type="button">
-                    Resetar visão global
-                  </button>
-                </div>
+              <div className="stage-legend" aria-hidden="true">
+                <span className="legend-item">
+                  <span className="legend-dot country" />
+                  países
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot air" />
+                  aéreo
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot sea" />
+                  marítimo
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot cable" />
+                  infraestrutura
+                </span>
               </div>
 
               <MapView
@@ -559,13 +681,17 @@ export default function App() {
       </main>
 
       <footer className="ticker-bar" aria-label="Fluxo ao vivo">
-        <span className="ticker-label">LIVE</span>
+        <span className="ticker-label">Ao vivo</span>
         <div className="ticker-track">
-          {tickerEvents.map((event) => (
-            <span className="ticker-item" key={event.id}>
-              {event.title} · {event.source}
-            </span>
-          ))}
+          {tickerEvents.length ? (
+            tickerEvents.map((event) => (
+              <span className="ticker-item" key={event.id}>
+                {event.title} · {event.source}
+              </span>
+            ))
+          ) : (
+            <span className="ticker-item">Aguardando novos eventos para compor o fluxo ao vivo.</span>
+          )}
         </div>
       </footer>
     </div>
@@ -664,11 +790,15 @@ function localizeDashboardPayload(payload: DashboardPayload): DashboardPayload {
     })),
     events: payload.events.map((event) => ({
       ...event,
-      countryName: event.countryIso2 ? localizeCountryName(event.countryIso2, event.countryName || event.countryIso2) : event.countryName,
+      countryName: event.countryIso2
+        ? localizeCountryName(event.countryIso2, event.countryName || event.countryIso2)
+        : event.countryName,
     })),
     channels: payload.channels.map((channel) => ({
       ...channel,
-      countryName: channel.countryIso2 ? localizeCountryName(channel.countryIso2, channel.countryName || channel.countryIso2) : channel.countryName,
+      countryName: channel.countryIso2
+        ? localizeCountryName(channel.countryIso2, channel.countryName || channel.countryIso2)
+        : channel.countryName,
     })),
   };
 }

@@ -33,12 +33,13 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
   margin: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background:
     radial-gradient(circle at top left, rgba(120, 198, 255, 0.06), transparent 22%),
     radial-gradient(circle at top right, rgba(130, 212, 142, 0.05), transparent 20%),
@@ -66,10 +67,11 @@ textarea {
   position: relative;
   min-height: 100dvh;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto;
   gap: 10px;
   padding: 12px;
-  overflow: hidden;
+  overflow: visible;
+  align-content: start;
 }
 
 .noise-layer,
@@ -305,24 +307,24 @@ textarea {
 }
 
 .workspace {
-  min-height: 0;
+  min-height: auto;
   display: grid;
   grid-template-columns: 288px minmax(0, 1fr) 390px;
   gap: 12px;
-  overflow: hidden;
+  overflow: visible;
+  align-items: start;
   background: transparent;
   border: 0;
   box-shadow: none;
 }
 
 .sidebar {
-  min-height: 0;
+  min-height: auto;
   display: grid;
   gap: 12px;
   align-content: start;
-  overflow-y: auto;
+  overflow: visible;
   padding-right: 2px;
-  overscroll-behavior: contain;
 }
 
 .sidebar-block {
@@ -570,16 +572,19 @@ textarea {
 }
 
 .stage-shell {
-  position: relative;
-  min-height: 0;
+  position: sticky;
+  top: 12px;
+  min-height: 720px;
+  height: calc(100dvh - 24px);
   overflow: hidden;
   background: var(--panel-bg-strong);
+  align-self: start;
 }
 
 .map-stage {
   position: relative;
   height: 100%;
-  min-height: 0;
+  min-height: 720px;
 }
 
 .stage-hud,
@@ -738,12 +743,12 @@ textarea {
 
 .program-panel,
 .country-panel {
-  min-height: 0;
+  min-height: auto;
   display: grid;
   gap: 16px;
   padding: 16px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
+  align-self: start;
 }
 
 .empty-panel {
@@ -948,10 +953,6 @@ textarea {
 }
 
 @media (max-width: 1240px) {
-  body {
-    overflow: auto;
-  }
-
   .app-shell {
     min-height: auto;
     overflow: visible;
@@ -986,6 +987,13 @@ textarea {
     overflow: visible;
   }
 
+  .stage-shell {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: 560px;
+  }
+
   .program-panel,
   .country-panel {
     order: 3;
@@ -1010,6 +1018,7 @@ textarea {
     align-content: start;
     gap: 10px;
     padding: 12px;
+    min-height: 0;
   }
 
   .map-canvas {

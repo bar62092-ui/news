@@ -127,6 +127,9 @@ export function MapView({
       maxZoom: 8.5,
       renderWorldCopies: false,
       attributionControl: false,
+      scrollZoom: false,
+      dragRotate: false,
+      touchPitch: false,
     });
     mapRef.current = map;
     map.addControl(new NavigationControl({ visualizePitch: false }), "top-right");

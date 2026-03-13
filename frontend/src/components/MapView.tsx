@@ -15,7 +15,8 @@ type MapViewProps = {
   selectedBbox: Bbox | null;
   worldBbox: Bbox;
   resetToken: number;
-  showRoutes: boolean;
+  showAirLayer: boolean;
+  showSeaLayer: boolean;
   onCountrySelect: (iso2: string) => void;
   onViewportChange: (bbox: Bbox, zoom: number) => void;
 };
@@ -49,7 +50,8 @@ export function MapView({
   selectedBbox,
   worldBbox,
   resetToken,
-  showRoutes,
+  showAirLayer,
+  showSeaLayer,
   onCountrySelect,
   onViewportChange,
 }: MapViewProps) {
@@ -63,17 +65,17 @@ export function MapView({
   const countryCollection = useMemo(() => buildFeatureCollection(countryFeatures), [countryFeatures]);
   const renderedAirItems = useMemo(
     () =>
-      showRoutes
+      showAirLayer
         ? airItems.slice(0, isInteracting ? MAX_INTERACTION_AIR_POINTS : MAX_RENDERED_AIR_ROUTES)
         : [],
-    [airItems, isInteracting, showRoutes],
+    [airItems, isInteracting, showAirLayer],
   );
   const renderedSeaItems = useMemo(
     () =>
-      showRoutes
+      showSeaLayer
         ? seaItems.slice(0, isInteracting ? MAX_INTERACTION_SEA_POINTS : MAX_RENDERED_SEA_ROUTES)
         : [],
-    [isInteracting, seaItems, showRoutes],
+    [isInteracting, seaItems, showSeaLayer],
   );
 
   useEffect(() => {
@@ -208,7 +210,7 @@ export function MapView({
       }),
     ];
 
-    if (showRoutes && !isInteracting) {
+    if (showAirLayer && !isInteracting) {
       layers.push(
         new PathLayer<AirItem>({
           id: "air-paths",
@@ -222,7 +224,7 @@ export function MapView({
       );
     }
 
-    if (showRoutes) {
+    if (showAirLayer) {
       layers.push(
         new ScatterplotLayer<AirItem>({
           id: "air-points",
@@ -233,19 +235,23 @@ export function MapView({
           getFillColor: () => [255, 165, 122, 255],
         }),
       );
-      if (!isInteracting) {
-        layers.push(
-          new PathLayer<SeaItem>({
-            id: "sea-paths",
-            data: renderedSeaItems,
-            getPath: (item) => item.track,
-            getColor: () => [76, 181, 245, 190],
-            getWidth: 2,
-            widthUnits: "pixels",
-            opacity: 0.72,
-          }),
-        );
-      }
+    }
+
+    if (showSeaLayer && !isInteracting) {
+      layers.push(
+        new PathLayer<SeaItem>({
+          id: "sea-paths",
+          data: renderedSeaItems,
+          getPath: (item) => item.track,
+          getColor: () => [76, 181, 245, 190],
+          getWidth: 2,
+          widthUnits: "pixels",
+          opacity: 0.72,
+        }),
+      );
+    }
+
+    if (showSeaLayer) {
       layers.push(
         new ScatterplotLayer<SeaItem>({
           id: "sea-points",
@@ -259,7 +265,7 @@ export function MapView({
     }
 
     overlay.setProps({ layers });
-  }, [countryCollection, countryMarkers, isInteracting, renderedAirItems, renderedSeaItems, selectedIso2, showRoutes]);
+  }, [countryCollection, countryMarkers, isInteracting, renderedAirItems, renderedSeaItems, selectedIso2, showAirLayer, showSeaLayer]);
 
   useEffect(() => {
     const map = mapRef.current;

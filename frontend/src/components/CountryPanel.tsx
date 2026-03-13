@@ -11,6 +11,7 @@ type CountryPanelProps = {
 
 export function CountryPanel({ country, news, topics, socketState }: CountryPanelProps) {
   const [openNewsId, setOpenNewsId] = useState<number | null>(null);
+  const signalCount = country ? country.newsCount + country.airCount + country.seaCount : 0;
 
   useEffect(() => {
     setOpenNewsId(news?.items?.[0]?.id ?? null);
@@ -51,6 +52,10 @@ export function CountryPanel({ country, news, topics, socketState }: CountryPane
         <article className="metric-card">
           <span>Rotas maritimas</span>
           <strong>{country.seaCount}</strong>
+        </article>
+        <article className="metric-card">
+          <span>Sinal total</span>
+          <strong>{signalCount}</strong>
         </article>
       </div>
 

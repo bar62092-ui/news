@@ -36,6 +36,7 @@ export default function App() {
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectTokenRef = useRef(0);
   const [reconnectToken, setReconnectToken] = useState(0);
+  const [resetToken, setResetToken] = useState(0);
   const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null);
   const isReady = bootstrap !== null;
 
@@ -63,8 +64,33 @@ export default function App() {
     () => WATCHLIST.map((iso2) => mergedCountries.find((country) => country.iso2 === iso2)).filter(Boolean) as CountrySummary[],
     [mergedCountries],
   );
+  const topSignalCountry = useMemo(
+    () =>
+      [...watchlistCountries].sort(
+        (left, right) =>
+          right.newsCount + right.airCount + right.seaCount - (left.newsCount + left.airCount + left.seaCount),
+      )[0] ?? null,
+    [watchlistCountries],
+  );
   const deferredAirItems = useDeferredValue(airItems);
   const deferredSeaItems = useDeferredValue(seaItems);
+  const worldBbox = bootstrap?.worldBbox ?? [-179.9, -60, 179.9, 85];
+
+  function handleSelectCountry(iso2: string): void {
+    setSelectedIso2(iso2);
+  }
+
+  function handleResetWorldView(): void {
+    setSelectedIso2(null);
+    setSelectedCountry(null);
+    setNewsPayload(null);
+    setTopicItems([]);
+    setAirItems([]);
+    setSeaItems([]);
+    setViewport(worldBbox);
+    setZoom(1.3);
+    setResetToken((current) => current + 1);
+  }
 
   useEffect(() => {
     let active = true;
@@ -312,10 +338,13 @@ export default function App() {
           <button
             key={country.iso2}
             className={country.iso2 === selectedIso2 ? "watch-pill active" : "watch-pill"}
-            onClick={() => setSelectedIso2(country.iso2)}
+            onClick={() => handleSelectCountry(country.iso2)}
             type="button"
           >
-            <strong>{country.name}</strong>
+            <div className="watch-pill-head">
+              <strong>{country.name}</strong>
+              <small className={`signal-chip ${signalTone(country)}`}>{signalLabel(country)}</small>
+            </div>
             <span>
               {country.newsCount} noticias · {country.airCount + country.seaCount} rotas
             </span>
@@ -348,8 +377,10 @@ export default function App() {
             seaItems={deferredSeaItems}
             selectedIso2={selectedIso2}
             selectedBbox={selectedBbox}
+            worldBbox={worldBbox}
+            resetToken={resetToken}
             showRoutes={shouldShowRoutes}
-            onCountrySelect={(iso2) => setSelectedIso2(iso2)}
+            onCountrySelect={handleSelectCountry}
             onViewportChange={(nextBbox, nextZoom) => {
               setViewport(nextBbox);
               setZoom(nextZoom);
@@ -359,6 +390,23 @@ export default function App() {
 
         <CountryPanel country={activeCountry} news={newsPayload} topics={topicItems} socketState={socketState} />
       </main>
+
+      <aside className="action-rail" aria-label="Acoes rapidas do mapa">
+        <button className="action-button" type="button" onClick={handleResetWorldView}>
+          Mundo
+        </button>
+        <button className="action-button" type="button" onClick={() => handleSelectCountry("BR")}>
+          Brasil
+        </button>
+        <button className="action-button" type="button" onClick={() => handleSelectCountry("US")}>
+          EUA
+        </button>
+        {topSignalCountry ? (
+          <button className="action-button action-button-strong" type="button" onClick={() => handleSelectCountry(topSignalCountry.iso2)}>
+            Top sinal
+          </button>
+        ) : null}
+      </aside>
 
       <footer className="ticker-bar" aria-label="Fluxo ao vivo">
         <span className="ticker-label">live</span>
@@ -396,4 +444,36 @@ function formatDate(value: string): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function signalValue(country: CountrySummary): number {
+  return country.newsCount + country.airCount + country.seaCount;
+}
+
+function signalLabel(country: CountrySummary): string {
+  const score = signalValue(country);
+  if (score >= 160) {
+    return "critico";
+  }
+  if (score >= 70) {
+    return "alto";
+  }
+  if (score >= 25) {
+    return "moderado";
+  }
+  return "baixo";
+}
+
+function signalTone(country: CountrySummary): string {
+  const score = signalValue(country);
+  if (score >= 160) {
+    return "critical";
+  }
+  if (score >= 70) {
+    return "high";
+  }
+  if (score >= 25) {
+    return "medium";
+  }
+  return "low";
 }

@@ -13,6 +13,8 @@ type MapViewProps = {
   seaItems: SeaItem[];
   selectedIso2: string | null;
   selectedBbox: Bbox | null;
+  worldBbox: Bbox;
+  resetToken: number;
   showRoutes: boolean;
   onCountrySelect: (iso2: string) => void;
   onViewportChange: (bbox: Bbox, zoom: number) => void;
@@ -45,6 +47,8 @@ export function MapView({
   seaItems,
   selectedIso2,
   selectedBbox,
+  worldBbox,
+  resetToken,
   showRoutes,
   onCountrySelect,
   onViewportChange,
@@ -256,6 +260,24 @@ export function MapView({
 
     overlay.setProps({ layers });
   }, [countryCollection, countryMarkers, isInteracting, renderedAirItems, renderedSeaItems, selectedIso2, showRoutes]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !resetToken) {
+      return;
+    }
+    map.fitBounds(
+      [
+        [worldBbox[0], worldBbox[1]],
+        [worldBbox[2], worldBbox[3]],
+      ],
+      {
+        padding: 32,
+        duration: 700,
+        maxZoom: 1.6,
+      },
+    );
+  }, [resetToken, worldBbox]);
 
   useEffect(() => {
     const map = mapRef.current;

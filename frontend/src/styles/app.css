@@ -216,6 +216,43 @@ button {
   font-size: 0.86rem;
 }
 
+.watch-pill-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.signal-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--hud-border);
+  background: rgba(8, 19, 14, 0.92);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+}
+
+.signal-chip.low {
+  color: #8fb9a0;
+}
+
+.signal-chip.medium {
+  color: #8edfc6;
+}
+
+.signal-chip.high {
+  color: #f6c15d;
+}
+
+.signal-chip.critical {
+  color: #ff8b70;
+}
+
 .rail-header {
   display: grid;
   gap: 6px;
@@ -340,7 +377,7 @@ button {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -502,6 +539,32 @@ button {
   white-space: nowrap;
 }
 
+.action-rail {
+  display: grid;
+  gap: 10px;
+}
+
+.action-button {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--hud-border);
+  background: var(--hud-bg);
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(92, 240, 164, 0.52);
+  background: rgba(10, 26, 18, 0.94);
+}
+
+.action-button-strong {
+  color: var(--accent);
+}
+
 @media (max-width: 1180px) {
   .content-grid {
     grid-template-columns: 1fr;
@@ -513,6 +576,10 @@ button {
 
   .country-panel {
     min-height: 0;
+  }
+
+  .action-rail {
+    display: none;
   }
 }
 
@@ -638,5 +705,13 @@ button {
     right: 20px;
     bottom: 20px;
     z-index: 6;
+  }
+
+  .action-rail {
+    position: absolute;
+    right: min(430px, calc(31vw + 40px));
+    top: 320px;
+    width: 112px;
+    z-index: 7;
   }
 }

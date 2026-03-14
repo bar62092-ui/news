@@ -67,7 +67,8 @@ export function buildCountryMapData(countries: CountrySummary[], selectedIso2: s
     }
     const centroid = summary.centroid ?? shape.centroid;
     const bounds = summary.bbox ?? shape.bbox;
-    const activity = summary.newsCount + summary.airCount + summary.seaCount;
+    const activity = summary.newsCount;
+    const isSelected = iso2 === selectedIso2;
 
     features.push({
       type: "Feature",
@@ -76,7 +77,7 @@ export function buildCountryMapData(countries: CountrySummary[], selectedIso2: s
       properties: {
         iso2,
         name: summary.name,
-        selected: iso2 === selectedIso2 ? 1 : 0,
+        selected: isSelected ? 1 : 0,
         activity,
         newsCount: summary.newsCount,
         airCount: summary.airCount,
@@ -85,17 +86,19 @@ export function buildCountryMapData(countries: CountrySummary[], selectedIso2: s
       bbox: bounds,
     });
 
-    markers.push({
-      iso2,
-      name: summary.name,
-      position: centroid,
-      bbox: bounds,
-      activity,
-      newsCount: summary.newsCount,
-      airCount: summary.airCount,
-      seaCount: summary.seaCount,
-      selected: iso2 === selectedIso2,
-    });
+    if (summary.newsCount > 0 || isSelected) {
+      markers.push({
+        iso2,
+        name: summary.name,
+        position: centroid,
+        bbox: bounds,
+        activity: Math.max(activity, isSelected ? 1 : 0),
+        newsCount: summary.newsCount,
+        airCount: summary.airCount,
+        seaCount: summary.seaCount,
+        selected: isSelected,
+      });
+    }
   }
 
   markers.sort((left, right) => right.activity - left.activity || left.name.localeCompare(right.name));

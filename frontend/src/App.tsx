@@ -1,93 +1,36 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent, ReactElement } from "react";
 
-import {
-  fetchBootstrap,
-  fetchCountry,
-  fetchCountryNews,
-  fetchCountryTopics,
-  fetchDashboard,
-  fetchProviders,
-  getWebSocketUrl,
-} from "./api";
+import { fetchBootstrap, fetchCountryNews, fetchCountryTopics, fetchLiveNews } from "./api";
 import { MapView } from "./components/MapView";
-import { ProgramPanel } from "./components/ProgramPanel";
-import { SignalChainView } from "./components/SignalChainView";
 import { buildCountryMapData, localizeCountryName } from "./lib/countries";
 import type {
-  AirItem,
   BootstrapPayload,
-  Bbox,
   CountryNewsPayload,
-  CountrySummary,
-  DashboardPayload,
-  LiveSnapshot,
-  ProgramId,
+  LiveNewsItem,
+  LiveNewsPayload,
   ProviderHealth,
-  SeaItem,
   TopicItem,
-  ViewMode,
 } from "./types";
 
-type FocusMode = "all" | "air" | "sea" | "news";
-type InfrastructureToggle = "cables" | "oil" | "landing" | "datacenters" | "ixps";
-
-const WORLD_BBOX: Bbox = [-179.9, -60, 179.9, 85];
-const VIEW_OPTIONS: Array<{ id: ViewMode; label: string }> = [
-  { id: "map", label: "O mapa" },
-  { id: "chain", label: "A cadeia" },
-];
-const MAP_MODE_OPTIONS: Array<{ id: FocusMode; label: string }> = [
-  { id: "all", label: "Tudo" },
-  { id: "air", label: "Aéreo" },
-  { id: "sea", label: "Marítimo" },
-  { id: "news", label: "Notícias" },
-];
-const PROGRAM_OPTIONS: Array<{ id: ProgramId; label: string; hot?: boolean }> = [
-  { id: "signals", label: "Sinais", hot: true },
-  { id: "chat", label: "Sala" },
-  { id: "stocks", label: "Bolsas" },
-  { id: "tv", label: "TV" },
-  { id: "markets", label: "Mercados" },
-  { id: "defcon", label: "DEFCON" },
-  { id: "outbreaks", label: "Surtos" },
-];
+const WORLD_BBOX = [-179.9, -60, 179.9, 85] as const;
+type PanelMode = "central" | "pais";
 
 export default function App() {
   const [bootstrap, setBootstrap] = useState<BootstrapPayload | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [providers, setProviders] = useState<ProviderHealth[]>([]);
+  const [liveNews, setLiveNews] = useState<LiveNewsPayload | null>(null);
   const [selectedIso2, setSelectedIso2] = useState<string | null>(null);
-  const [selectedCountry, setSelectedCountry] = useState<CountrySummary | null>(null);
-  const [newsPayload, setNewsPayload] = useState<CountryNewsPayload | null>(null);
-  const [topicItems, setTopicItems] = useState<TopicItem[]>([]);
-  const [airItems, setAirItems] = useState<AirItem[]>([]);
-  const [seaItems, setSeaItems] = useState<SeaItem[]>([]);
-  const [socketState, setSocketState] = useState("connecting");
-  const [viewport, setViewport] = useState<Bbox>(WORLD_BBOX);
-  const [zoom, setZoom] = useState(1.3);
+  const [countryNews, setCountryNews] = useState<CountryNewsPayload | null>(null);
+  const [topics, setTopics] = useState<TopicItem[]>([]);
+  const [panelMode, setPanelMode] = useState<PanelMode>("central");
+  const [openNewsId, setOpenNewsId] = useState<number | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("map");
-  const [mapMode, setMapMode] = useState<FocusMode>("all");
-  const [activeProgram, setActiveProgram] = useState<ProgramId>("signals");
-  const [reconnectToken, setReconnectToken] = useState(0);
   const [resetToken, setResetToken] = useState(0);
-  const [lastSnapshotAt, setLastSnapshotAt] = useState<string | null>(null);
-  const [infraVisibility, setInfraVisibility] = useState<Record<InfrastructureToggle, boolean>>({
-    cables: true,
-    oil: false,
-    landing: true,
-    datacenters: false,
-    ixps: false,
-  });
+  const [panelTop, setPanelTop] = useState(156);
+  const headerRef = useRef<HTMLElement | null>(null);
 
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<number | null>(null);
-  const reconnectTokenRef = useRef(0);
-  const activeCountryRef = useRef<CountrySummary | null>(null);
-  const isReady = bootstrap !== null;
-  const worldBbox = bootstrap?.worldBbox ?? WORLD_BBOX;
-
-  const mergedCountries = useMemo(
+  const localizedCountries = useMemo(
     () =>
       bootstrap?.countries.map((country) => ({
         ...country,
@@ -95,710 +38,455 @@ export default function App() {
       })) ?? [],
     [bootstrap],
   );
-  const mapData = useMemo(() => buildCountryMapData(mergedCountries, selectedIso2), [mergedCountries, selectedIso2]);
-  const selectedMapCountry = useMemo(
-    () => mapData.markers.find((country) => country.iso2 === selectedIso2) ?? null,
-    [mapData.markers, selectedIso2],
+  const deferredCountries = useDeferredValue(localizedCountries);
+  const mapData = useMemo(() => buildCountryMapData(deferredCountries, selectedIso2), [deferredCountries, selectedIso2]);
+  const activeCountry = useMemo(
+    () => localizedCountries.find((country) => country.iso2 === selectedIso2) ?? null,
+    [localizedCountries, selectedIso2],
   );
-  const selectedCountryFromBootstrap = useMemo(
-    () => mergedCountries.find((country) => country.iso2 === selectedIso2) ?? null,
-    [mergedCountries, selectedIso2],
+  const activeCountries = useMemo(
+    () =>
+      [...localizedCountries]
+        .filter((country) => country.newsCount > 0)
+        .sort((left, right) => right.newsCount - left.newsCount || left.name.localeCompare(right.name))
+        .slice(0, 10),
+    [localizedCountries],
   );
-  const activeCountry = selectedCountry ?? selectedCountryFromBootstrap;
-  const selectedBbox = activeCountry?.bbox ?? selectedMapCountry?.bbox ?? null;
-  const shouldShowRoutes = viewMode === "map" && (zoom >= 2.6 || Boolean(activeCountry));
-  const deferredAirItems = useDeferredValue(airItems);
-  const deferredSeaItems = useDeferredValue(seaItems);
-  const mapConfig = useMemo(() => getMapConfig(mapMode), [mapMode]);
-  const subscriptionLayers = useMemo(
-    () => buildSubscriptionLayers(mapMode, shouldShowRoutes, selectedIso2),
-    [mapMode, selectedIso2, shouldShowRoutes],
-  );
-  const topSignal = dashboard?.signals[0] ?? null;
+  const selectedBbox = activeCountry?.bbox ?? null;
+  const worldBbox = bootstrap?.worldBbox ?? [...WORLD_BBOX];
+  const totalSignalCountries = mapData.markers.length;
+  const totalNewsCount = localizedCountries.reduce((accumulator, country) => accumulator + country.newsCount, 0);
+  const activeProviderCount = providers.filter((provider) => provider.ok).length;
   const visibleProviders = providers.slice(0, 5);
-  const tickerEvents = dashboard?.events.slice(0, 10) ?? [];
-  const sidebarSignals = dashboard?.signals.slice(0, 8) ?? [];
-  const quickFocusSignals = dashboard?.signals.slice(0, 3) ?? [];
-  const activeRouteCount = airItems.length + seaItems.length;
-  const infrastructureSnapshot = dashboard?.infrastructure.slice(0, 4) ?? [];
+  const localizedLiveNews = useMemo(() => localizeLiveNews(liveNews), [liveNews]);
 
   useEffect(() => {
-    activeCountryRef.current = activeCountry;
-  }, [activeCountry]);
+    let cancelled = false;
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadInitialData() {
+    async function loadWorld() {
       try {
-        const [bootstrapPayload, dashboardPayload] = await Promise.all([fetchBootstrap(), fetchDashboard()]);
-        if (!active) {
+        const [bootstrapPayload, livePayload] = await Promise.all([fetchBootstrap(), fetchLiveNews(70)]);
+        if (cancelled) {
           return;
         }
-        setBootstrap(bootstrapPayload);
-        setDashboard(localizeDashboardPayload(dashboardPayload));
-        setProviders(bootstrapPayload.providers);
-        setViewport(bootstrapPayload.worldBbox);
-        setLastSnapshotAt(bootstrapPayload.generatedAt);
+        startTransition(() => {
+          setBootstrap(localizeBootstrap(bootstrapPayload));
+          setProviders(bootstrapPayload.providers);
+          setLiveNews(livePayload);
+          setErrorText(null);
+        });
       } catch (error) {
-        if (!active) {
+        if (cancelled) {
           return;
         }
-        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o painel inicial");
+        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o mapa global");
       }
     }
 
-    void loadInitialData();
+    void loadWorld();
+    const interval = window.setInterval(() => {
+      void loadWorld();
+    }, 45000);
+
     return () => {
-      active = false;
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    const updatePanelTop = () => {
+      const nextTop = Math.ceil(header.getBoundingClientRect().height) + 28;
+      setPanelTop(nextTop);
+    };
+
+    updatePanelTop();
+    const resizeObserver = new ResizeObserver(() => {
+      updatePanelTop();
+    });
+    resizeObserver.observe(header);
+    window.addEventListener("resize", updatePanelTop);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePanelTop);
     };
   }, []);
 
   useEffect(() => {
     if (!selectedIso2) {
+      setCountryNews(null);
+      setTopics([]);
       return;
     }
 
+    let cancelled = false;
     const iso2 = selectedIso2;
-    let active = true;
 
     async function loadCountry() {
       try {
-        const [country, news, topics] = await Promise.all([
-          fetchCountry(iso2),
+        const [newsPayload, topicsPayload] = await Promise.all([
           fetchCountryNews(iso2),
           fetchCountryTopics(iso2),
         ]);
-        if (!active) {
+        if (cancelled) {
           return;
         }
-
-        const localizedCountry = {
-          ...country,
-          name: localizeCountryName(country.iso2, country.name),
-        };
-
-        setSelectedCountry(localizedCountry);
-        setNewsPayload({
-          ...news,
-          country: news.country
-            ? {
-                ...news.country,
-                name: localizeCountryName(news.country.iso2, news.country.name),
-              }
-            : news.country,
-        });
-        setTopicItems(topics.items);
-        setBootstrap((current) => {
-          if (!current) {
-            return current;
-          }
-          return {
-            ...current,
-            countries: current.countries.map((item) =>
-              item.iso2 === localizedCountry.iso2 ? { ...item, ...localizedCountry } : item,
-            ),
-          };
+        startTransition(() => {
+          setCountryNews({
+            ...newsPayload,
+            country: newsPayload.country
+              ? {
+                  ...newsPayload.country,
+                  name: localizeCountryName(newsPayload.country.iso2, newsPayload.country.name),
+                }
+              : null,
+          });
+          setTopics(topicsPayload.items);
+          setOpenNewsId(newsPayload.items[0]?.id ?? null);
+          setErrorText(null);
         });
       } catch (error) {
-        if (!active) {
+        if (cancelled) {
           return;
         }
-        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o país");
+        setErrorText(error instanceof Error ? error.message : "Falha ao carregar o pais selecionado");
       }
     }
 
     void loadCountry();
     return () => {
-      active = false;
+      cancelled = true;
     };
   }, [selectedIso2]);
 
-  useEffect(() => {
-    if (!isReady) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const connect = () => {
-      setSocketState("connecting");
-      const socket = new WebSocket(getWebSocketUrl());
-      socketRef.current = socket;
-
-      socket.addEventListener("open", () => {
-        if (cancelled) {
-          return;
-        }
-        setSocketState("open");
-        sendSubscription(socket, viewport, selectedBbox, selectedIso2, subscriptionLayers);
-      });
-
-      socket.addEventListener("message", (event) => {
-        if (cancelled) {
-          return;
-        }
-        const payload = JSON.parse(event.data) as LiveSnapshot;
-        if (payload.type !== "snapshot") {
-          return;
-        }
-
-        startTransition(() => {
-          setLastSnapshotAt(payload.generatedAt);
-          if (payload.air?.items) {
-            setAirItems(payload.air.items);
-          }
-          if (payload.sea?.items) {
-            setSeaItems(payload.sea.items);
-          }
-          if (payload.countryIso2 && (payload.air?.items || payload.sea?.items)) {
-            const nextAirCount = payload.air?.items?.length ?? 0;
-            const nextSeaCount = payload.sea?.items?.length ?? 0;
-
-            setSelectedCountry((current) => {
-              if (!current || current.iso2 !== payload.countryIso2) {
-                return current;
-              }
-              if (current.airCount === nextAirCount && current.seaCount === nextSeaCount) {
-                return current;
-              }
-              return { ...current, airCount: nextAirCount, seaCount: nextSeaCount };
-            });
-
-            setBootstrap((current) => {
-              if (!current) {
-                return current;
-              }
-              let changed = false;
-              const nextCountries = current.countries.map((item) => {
-                if (item.iso2 !== payload.countryIso2) {
-                  return item;
-                }
-                if (item.airCount === nextAirCount && item.seaCount === nextSeaCount) {
-                  return item;
-                }
-                changed = true;
-                return { ...item, airCount: nextAirCount, seaCount: nextSeaCount };
-              });
-              return changed ? { ...current, countries: nextCountries } : current;
-            });
-          }
-          if (payload.news) {
-            setNewsPayload((current) => ({
-              country: current?.country ?? activeCountryRef.current,
-              items: payload.news?.items ?? current?.items ?? [],
-              stale: payload.news?.stale ?? current?.stale ?? false,
-              lastRefreshAt: payload.news?.lastRefreshAt ?? current?.lastRefreshAt ?? null,
-              status: payload.news?.status ?? current?.status ?? null,
-            }));
-          }
-          if (payload.topics) {
-            setTopicItems(payload.topics);
-          }
-        });
-      });
-
-      socket.addEventListener("close", () => {
-        if (cancelled) {
-          return;
-        }
-        setSocketState("closed");
-        reconnectTimerRef.current = window.setTimeout(() => {
-          reconnectTokenRef.current += 1;
-          setReconnectToken(reconnectTokenRef.current);
-        }, 3000);
-      });
-
-      socket.addEventListener("error", () => {
-        if (cancelled) {
-          return;
-        }
-        setSocketState("closed");
-      });
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimerRef.current) {
-        window.clearTimeout(reconnectTimerRef.current);
-      }
-      socketRef.current?.close();
-      socketRef.current = null;
-    };
-  }, [isReady, reconnectToken]);
-
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    sendSubscription(socket, viewport, selectedBbox, selectedIso2, subscriptionLayers);
-  }, [selectedBbox, selectedIso2, subscriptionLayers, viewport]);
-
-  useEffect(() => {
-    if (!isReady) {
-      return;
-    }
-    const interval = window.setInterval(() => {
-      void Promise.all([fetchProviders(), fetchDashboard()])
-        .then(([providerPayload, dashboardPayload]) => {
-          setProviders(providerPayload.items);
-          setDashboard(localizeDashboardPayload(dashboardPayload));
-        })
-        .catch(() => {
-          // Mantém o último estado conhecido em falhas transitórias.
-        });
-    }, 30000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [isReady]);
-
   function handleSelectCountry(iso2: string): void {
     setSelectedIso2(iso2);
-    setActiveProgram("signals");
+    setPanelMode("pais");
   }
 
-  function handleResetWorldView(): void {
+  function handleShowWorld(): void {
     setSelectedIso2(null);
-    setSelectedCountry(null);
-    setNewsPayload(null);
-    setTopicItems([]);
-    setAirItems([]);
-    setSeaItems([]);
-    setViewport(worldBbox);
-    setZoom(1.3);
+    setPanelMode("central");
+    setCountryNews(null);
+    setTopics([]);
+    setOpenNewsId(null);
     setResetToken((current) => current + 1);
   }
 
-  function toggleInfrastructure(filter: InfrastructureToggle): void {
-    setInfraVisibility((current) => ({
-      ...current,
-      [filter]: !current[filter],
-    }));
-  }
-
   return (
-    <div className="app-shell">
-      <div className="noise-layer" aria-hidden="true" />
-      <div className="vignette-layer" aria-hidden="true" />
-      <div className="grid-layer" aria-hidden="true" />
+    <div className="app-shell live-map-shell" style={{ ["--panel-top" as string]: `${panelTop}px` }}>
+      <div className="map-stage">
+        <MapView
+          countryFeatures={mapData.features}
+          countryMarkers={mapData.markers}
+          selectedIso2={selectedIso2}
+          selectedBbox={selectedBbox}
+          worldBbox={worldBbox}
+          resetToken={resetToken}
+          onCountrySelect={handleSelectCountry}
+        />
+      </div>
 
-      <header className="command-bar">
-        <div className="brand-strip">
-          <p className="eyebrow">Observatório global</p>
+      <header className="hud-panel hud-top" ref={headerRef}>
+        <div className="brand-block">
+          <p className="eyebrow">Monitor global de noticias</p>
           <h1>World Watch</h1>
           <p className="brand-copy">
-            {topSignal ? `${topSignal.name} em destaque com ${topSignal.score} pontos.` : "Rotas, sinais e notícias em quase tempo real."}
+            Mapa mundi em tempo quase real com sinal por pais. Abertura leve, mapa em tela inteira e leitura direta do fluxo de noticias.
           </p>
         </div>
 
-        <nav className="view-tabs" aria-label="Modo de visualização">
-          {VIEW_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              className={viewMode === option.id ? "view-tab active" : "view-tab"}
-              onClick={() => setViewMode(option.id)}
-              type="button"
-            >
-              {option.label}
-            </button>
-          ))}
-        </nav>
+        <div className="hero-metrics">
+          <article className="hero-metric">
+            <span>Paises com sinal</span>
+            <strong>{totalSignalCountries}</strong>
+          </article>
+          <article className="hero-metric">
+            <span>Noticias 24h</span>
+            <strong>{totalNewsCount}</strong>
+          </article>
+          <article className="hero-metric">
+            <span>Fontes ok</span>
+            <strong>{activeProviderCount}</strong>
+          </article>
+        </div>
 
-        <div className="status-cluster">
-          <div className="status-main">
-            <span className={`live-pill ${socketState === "open" ? "open" : "closed"}`}>
-              {socketState === "open" ? "ao vivo" : "reconectando"}
-            </span>
-            <strong>{topSignal ? topSignal.summary : "Radar global ativo"}</strong>
-          </div>
-          <span className="status-time">
-            {lastSnapshotAt ? `Último snapshot ${formatDate(lastSnapshotAt)}` : "Aguardando snapshot"}
-          </span>
+        <div className="header-actions">
           <div className="provider-strip">
             {visibleProviders.map((provider) => (
-              <span className={`status-chip ${provider.ok ? "ok" : "error"}`} key={provider.providerName}>
+              <span className={provider.ok ? "status-chip ok" : "status-chip error"} key={provider.providerName}>
                 {provider.providerName}
               </span>
             ))}
           </div>
+          <div className="action-row">
+            <button
+              className={panelMode === "central" ? "action-chip active" : "action-chip"}
+              onClick={() => setPanelMode("central")}
+              type="button"
+            >
+              Central de noticias
+            </button>
+            <button
+              className={panelMode === "pais" ? "action-chip active" : "action-chip"}
+              disabled={!activeCountry}
+              onClick={() => setPanelMode("pais")}
+              type="button"
+            >
+              Pais ativo
+            </button>
+            <button className="action-chip" onClick={handleShowWorld} type="button">
+              Mundo
+            </button>
+          </div>
+          <p className="status-copy">
+            {localizedLiveNews?.generatedAt ? `Atualizado ${formatDate(localizedLiveNews.generatedAt)}` : "Preparando feed global"}
+          </p>
         </div>
       </header>
 
-      {errorText ? <div className="alert-banner error">{errorText}</div> : null}
-      {newsPayload?.stale || socketState !== "open" ? (
-        <div className="alert-banner warning">
-          Servindo cache local enquanto as fontes estabilizam. Último snapshot: {lastSnapshotAt ? formatDate(lastSnapshotAt) : "sem dado"}.
-        </div>
-      ) : null}
-
-      <main className="workspace">
-        <aside className="sidebar">
-          <section className="sidebar-block program-dock" aria-label="Programas">
-            <div className="sidebar-heading">
-              <h2>Programas</h2>
-              <span>{PROGRAM_OPTIONS.length}</span>
-            </div>
-            <div className="dock-grid">
-              {PROGRAM_OPTIONS.map((program, index) => (
+      <aside className="hud-panel hud-left">
+        <section className="panel-section compact">
+          <div className="section-heading">
+            <h2>Paises em destaque</h2>
+            <span>{activeCountries.length}</span>
+          </div>
+          <div className="country-pills">
+            {activeCountries.length ? (
+              activeCountries.map((country) => (
                 <button
-                  key={program.id}
-                  className={activeProgram === program.id ? "dock-button active" : "dock-button"}
-                  onClick={() => setActiveProgram(program.id)}
+                  className={country.iso2 === selectedIso2 ? "country-pill active" : "country-pill"}
+                  key={country.iso2}
+                  onClick={() => handleSelectCountry(country.iso2)}
                   type="button"
                 >
-                  <span className="dock-index">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="dock-label">{program.label}</span>
-                  <span className="dock-count">{programCount(program.id, dashboard)}</span>
-                  {program.hot ? <span className="dock-hot">hot</span> : null}
+                  <strong>{country.name}</strong>
+                  <span>{country.newsCount} noticias</span>
                 </button>
-              ))}
-            </div>
-          </section>
-
-          <section className="sidebar-block watchlist-panel">
-            <div className="sidebar-heading">
-              <h2>Países em foco</h2>
-              <span>{sidebarSignals.length || mergedCountries.length}</span>
-            </div>
-            {sidebarSignals.length ? (
-              <div className="watchlist">
-                {sidebarSignals.map((signal) => (
-                  <button
-                    className={signal.iso2 === selectedIso2 ? "watch-button active" : "watch-button"}
-                    key={signal.iso2}
-                    onClick={() => handleSelectCountry(signal.iso2)}
-                    type="button"
-                  >
-                    <div className="watch-copy">
-                      <strong>{signal.name}</strong>
-                      <span>{signal.summary}</span>
-                    </div>
-                    <div className="watch-meta">
-                      <span className={`tone-pill ${signal.level}`}>{signal.level}</span>
-                      <small>{signal.newsCount} notícias</small>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              ))
             ) : (
-              <p className="muted-copy">Carregando países monitorados e o ranking de sinais.</p>
+              <p className="muted-copy">Aguardando paises com noticias recentes.</p>
             )}
-            <button className="ghost-action" onClick={handleResetWorldView} type="button">
-              Voltar ao mundo
-            </button>
-          </section>
-
-          <section className="sidebar-block filter-panel">
-            <div className="sidebar-heading">
-              <h2>{viewMode === "map" ? "Camadas" : "Resumo"}</h2>
-              <span>{viewMode === "map" ? mapModeLabel(mapMode) : `DEFCON ${dashboard?.defcon.level ?? "--"}`}</span>
-            </div>
-
-            {viewMode === "map" ? (
-              <>
-                <div className="filter-grid">
-                  {MAP_MODE_OPTIONS.map((option) => (
-                    <button
-                      key={option.id}
-                      className={mapMode === option.id ? "filter-chip active" : "filter-chip"}
-                      onClick={() => setMapMode(option.id)}
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="sidebar-subheading">
-                  <span>Infraestrutura</span>
-                </div>
-                <div className="filter-grid">
-                  <button
-                    className={infraVisibility.cables ? "filter-chip active" : "filter-chip"}
-                    onClick={() => toggleInfrastructure("cables")}
-                    type="button"
-                  >
-                    Cabos
-                  </button>
-                  <button
-                    className={infraVisibility.oil ? "filter-chip active" : "filter-chip"}
-                    onClick={() => toggleInfrastructure("oil")}
-                    type="button"
-                  >
-                    Petróleo
-                  </button>
-                  <button
-                    className={infraVisibility.landing ? "filter-chip active" : "filter-chip"}
-                    onClick={() => toggleInfrastructure("landing")}
-                    type="button"
-                  >
-                    Landing
-                  </button>
-                  <button
-                    className={infraVisibility.datacenters ? "filter-chip active" : "filter-chip"}
-                    onClick={() => toggleInfrastructure("datacenters")}
-                    type="button"
-                  >
-                    Data centers
-                  </button>
-                  <button
-                    className={infraVisibility.ixps ? "filter-chip active" : "filter-chip"}
-                    onClick={() => toggleInfrastructure("ixps")}
-                    type="button"
-                  >
-                    IXPs
-                  </button>
-                </div>
-
-                <div className="infra-list">
-                  {infrastructureSnapshot.map((item) => (
-                    <div className="infra-row" key={item.id}>
-                      <span>{item.label}</span>
-                      <strong>{item.count}</strong>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="summary-stack">
-                <div className="summary-row">
-                  <span>Top sinal</span>
-                  <strong>{topSignal?.name ?? "Aguardando dados"}</strong>
-                </div>
-                <div className="summary-row">
-                  <span>Surtos críticos</span>
-                  <strong>{dashboard?.outbreaks.filter((item) => item.tone === "critical" || item.tone === "high").length ?? 0}</strong>
-                </div>
-                <div className="summary-row">
-                  <span>Mercados</span>
-                  <strong>{dashboard?.markets.length ?? 0}</strong>
-                </div>
-              </div>
-            )}
-          </section>
-        </aside>
-
-        <section className="stage-shell">
-          {viewMode === "map" ? (
-            <div className="map-stage">
-              <div className="stage-hud hud-left">
-                <p className="eyebrow">Foco atual</p>
-                <strong>{activeCountry ? activeCountry.name : "Mundo"}</strong>
-                <span>
-                  {mapModeLabel(mapMode)} ·{" "}
-                  {shouldShowRoutes ? `${activeRouteCount} rotas no recorte ativo` : "atividade agregada por país"}
-                </span>
-              </div>
-
-              <div className="stage-hud hud-right">
-                <div className="hud-actions">
-                  <button className="hud-button" onClick={handleResetWorldView} type="button">
-                    Mundo
-                  </button>
-                  {quickFocusSignals.map((signal) => (
-                    <button className="hud-button" key={signal.iso2} onClick={() => handleSelectCountry(signal.iso2)} type="button">
-                      {signal.name}
-                    </button>
-                  ))}
-                </div>
-                <div className="stage-metrics">
-                  <article className="stage-metric">
-                    <span>Notícias</span>
-                    <strong>{activeCountry?.newsCount ?? topSignal?.newsCount ?? 0}</strong>
-                  </article>
-                  <article className="stage-metric">
-                    <span>Aéreo</span>
-                    <strong>{airItems.length}</strong>
-                  </article>
-                  <article className="stage-metric">
-                    <span>Marítimo</span>
-                    <strong>{seaItems.length}</strong>
-                  </article>
-                </div>
-              </div>
-
-              <div className="stage-legend" aria-hidden="true">
-                <span className="legend-item">
-                  <span className="legend-dot country" />
-                  países
-                </span>
-                <span className="legend-item">
-                  <span className="legend-dot air" />
-                  aéreo
-                </span>
-                <span className="legend-item">
-                  <span className="legend-dot sea" />
-                  marítimo
-                </span>
-                <span className="legend-item">
-                  <span className="legend-dot cable" />
-                  infraestrutura
-                </span>
-              </div>
-
-              <MapView
-                countryFeatures={mapData.features}
-                countryMarkers={mapData.markers}
-                airItems={deferredAirItems}
-                seaItems={deferredSeaItems}
-                selectedIso2={selectedIso2}
-                selectedBbox={selectedBbox}
-                worldBbox={worldBbox}
-                resetToken={resetToken}
-                showAirLayer={shouldShowRoutes && mapConfig.showAir}
-                showSeaLayer={shouldShowRoutes && mapConfig.showSea}
-                showCableRoutes={infraVisibility.cables}
-                showOilRoutes={infraVisibility.oil}
-                showLandingStations={infraVisibility.landing}
-                showDatacenters={infraVisibility.datacenters}
-                showIxps={infraVisibility.ixps}
-                onCountrySelect={handleSelectCountry}
-                onViewportChange={(nextBbox, nextZoom) => {
-                  setViewport(nextBbox);
-                  setZoom(nextZoom);
-                }}
-              />
-            </div>
-          ) : (
-            <SignalChainView dashboard={dashboard} onSelectCountry={handleSelectCountry} selectedIso2={selectedIso2} />
-          )}
+          </div>
         </section>
 
-        <ProgramPanel
-          activeProgram={activeProgram}
-          country={activeCountry}
-          news={newsPayload}
-          topics={topicItems}
-          socketState={socketState}
-          dashboard={dashboard}
-          providers={providers}
-          onSelectCountry={handleSelectCountry}
-        />
-      </main>
+        <section className="panel-section compact">
+          <div className="section-heading">
+            <h2>Leitura do mapa</h2>
+          </div>
+          <ul className="mini-list">
+            <li>O brilho laranja marca paises com noticias recentes.</li>
+            <li>Clique no pais ou no sinal para abrir o painel detalhado.</li>
+            <li>A central lateral traz o fluxo global sem sair do site.</li>
+          </ul>
+        </section>
+      </aside>
 
-      <footer className="ticker-bar" aria-label="Fluxo ao vivo">
-        <span className="ticker-label">Ao vivo</span>
-        <div className="ticker-track">
-          {tickerEvents.length ? (
-            tickerEvents.map((event) => (
-              <span className="ticker-item" key={event.id}>
-                {event.title} · {event.source}
-              </span>
-            ))
-          ) : (
-            <span className="ticker-item">Aguardando novos eventos para compor o fluxo ao vivo.</span>
-          )}
+      <aside className="hud-panel hud-right">
+        <div className="panel-header sticky">
+          <div>
+            <p className="eyebrow">{panelMode === "central" ? "Feed global" : "Pais selecionado"}</p>
+            <h2>{panelMode === "central" ? "Central de noticias" : activeCountry?.name ?? "Nenhum pais ativo"}</h2>
+          </div>
+          {panelMode === "pais" && activeCountry ? <span className="status-chip ok">{activeCountry.newsCount} noticias</span> : null}
+        </div>
+
+        {errorText ? <div className="alert-banner error">{errorText}</div> : null}
+
+        {panelMode === "central" ? (
+          <section className="panel-section panel-scroll">
+            {localizedLiveNews?.items?.length ? (
+              <ul className="news-list">
+                {localizedLiveNews.items.map((item) => (
+                  <li className="news-card compact" key={`hub-${item.id}-${item.countryIso2 || "xx"}`}>
+                    <button className="news-toggle" onClick={() => setOpenNewsId(item.id)} type="button">
+                      <div className="news-meta-row">
+                        <span className="country-badge" onClick={(event) => handleCountryBadgeClick(event, item, handleSelectCountry)} role="presentation">
+                          {item.countryName || "Radar global"}
+                        </span>
+                        <span>{formatDate(item.publishedAt)}</span>
+                      </div>
+                      <strong>{item.title}</strong>
+                      <span>
+                        {item.source}
+                        {item.fallbackScope === "global" ? " · fallback global" : ""}
+                      </span>
+                    </button>
+                    {openNewsId === item.id ? (
+                      <div className="news-body">
+                        {renderParagraphs(item.contentText || item.summary)}
+                        <a className="source-link" href={item.url} rel="noreferrer" target="_blank">
+                          Abrir fonte original
+                        </a>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted-copy">O fluxo global ainda nao recebeu noticias suficientes.</p>
+            )}
+          </section>
+        ) : activeCountry ? (
+          <>
+            <section className="panel-section compact">
+              <div className="metric-inline-grid">
+                <article className="metric-tile">
+                  <span>Noticias</span>
+                  <strong>{activeCountry.newsCount}</strong>
+                </article>
+                <article className="metric-tile">
+                  <span>Atualizacao</span>
+                  <strong>{formatShortDate(activeCountry.lastNewsRefreshAt)}</strong>
+                </article>
+              </div>
+            </section>
+
+            <section className="panel-section compact">
+              <div className="section-heading">
+                <h2>Tendencias</h2>
+                <span>{topics.length}</span>
+              </div>
+              <div className="topic-list">
+                {topics.length ? (
+                  topics.map((topic) => (
+                    <span className="topic-chip" key={topic.label}>
+                      {topic.label}
+                      <small>{topic.sourceCount} fontes</small>
+                    </span>
+                  ))
+                ) : (
+                  <p className="muted-copy">Sem clusters suficientes ainda para este pais.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="panel-section panel-scroll">
+              {countryNews?.items?.length ? (
+                <ul className="news-list">
+                  {countryNews.items.map((item) => (
+                    <li className={openNewsId === item.id ? "news-card open" : "news-card"} key={`country-${item.id}`}>
+                      <button className="news-toggle" onClick={() => setOpenNewsId(openNewsId === item.id ? null : item.id)} type="button">
+                        <strong>{item.title}</strong>
+                        <span>
+                          {item.source} · {formatDate(item.publishedAt)}
+                        </span>
+                      </button>
+                      {openNewsId === item.id ? (
+                        <div className="news-body">
+                          {renderParagraphs(item.contentText || item.summary)}
+                          <a className="source-link" href={item.url} rel="noreferrer" target="_blank">
+                            Abrir fonte original
+                          </a>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted-copy">Ainda sem noticias suficientes para este pais.</p>
+              )}
+            </section>
+          </>
+        ) : (
+          <section className="panel-section panel-scroll">
+            <p className="muted-copy">Selecione um pais no mapa ou na lista lateral para abrir o detalhe local.</p>
+          </section>
+        )}
+      </aside>
+
+      <footer className="hud-panel hud-bottom">
+        <div className="ticker-strip">
+          <span className="ticker-label">LIVE</span>
+          {(activeCountries.length ? activeCountries : localizedCountries.slice(0, 6)).map((country) => (
+            <button className="ticker-item" key={`ticker-${country.iso2}`} onClick={() => handleSelectCountry(country.iso2)} type="button">
+              {country.name}: {country.newsCount} noticias
+            </button>
+          ))}
         </div>
       </footer>
     </div>
   );
 }
 
-function buildSubscriptionLayers(focusMode: FocusMode, shouldShowRoutes: boolean, selectedIso2: string | null): string[] {
-  const layers: string[] = [];
-
-  if (shouldShowRoutes && (focusMode === "all" || focusMode === "air")) {
-    layers.push("air");
-  }
-  if (shouldShowRoutes && (focusMode === "all" || focusMode === "sea")) {
-    layers.push("sea");
-  }
-  if (selectedIso2 && (focusMode === "all" || focusMode === "news")) {
-    layers.push("news");
-  }
-
-  if (!layers.length) {
-    layers.push("news");
-  }
-
-  return layers;
+function localizeBootstrap(payload: BootstrapPayload): BootstrapPayload {
+  return {
+    ...payload,
+    countries: payload.countries.map((country) => ({
+      ...country,
+      name: localizeCountryName(country.iso2, country.name),
+    })),
+  };
 }
 
-function getMapConfig(focusMode: FocusMode): { showAir: boolean; showSea: boolean } {
-  if (focusMode === "air") {
-    return { showAir: true, showSea: false };
+function localizeLiveNews(payload: LiveNewsPayload | null): LiveNewsPayload | null {
+  if (!payload) {
+    return null;
   }
-  if (focusMode === "sea") {
-    return { showAir: false, showSea: true };
-  }
-  if (focusMode === "news") {
-    return { showAir: false, showSea: false };
-  }
-  return { showAir: true, showSea: true };
+  return {
+    ...payload,
+    items: payload.items.map((item) => ({
+      ...item,
+      countryName: item.countryIso2 ? localizeCountryName(item.countryIso2, item.countryName || item.countryIso2) : item.countryName,
+    })),
+  };
 }
 
-function sendSubscription(
-  socket: WebSocket,
-  viewport: Bbox,
-  countryBbox: Bbox | null,
-  selectedIso2: string | null,
-  layers: string[],
-): void {
-  socket.send(
-    JSON.stringify({
-      bbox: countryBbox ?? viewport,
-      countryIso2: selectedIso2,
-      layers,
-    }),
+function renderParagraphs(value: string | null | undefined): ReactElement {
+  const paragraphs = (value || "")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (!paragraphs.length) {
+    return <p className="muted-copy">Sem corpo extraido ainda para esta materia.</p>;
+  }
+
+  return (
+    <>
+      {paragraphs.map((paragraph, index) => (
+        <p key={`${paragraph.slice(0, 24)}-${index}`}>{paragraph}</p>
+      ))}
+    </>
   );
 }
 
-function formatDate(value: string): string {
+function handleCountryBadgeClick(
+  event: MouseEvent<HTMLSpanElement>,
+  item: LiveNewsItem,
+  onSelectCountry: (iso2: string) => void,
+): void {
+  if (!item.countryIso2) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  onSelectCountry(item.countryIso2);
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) {
+    return "sem data";
+  }
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
 }
 
-function programCount(program: ProgramId, dashboard: DashboardPayload | null): number | string {
-  if (!dashboard) {
-    return "--";
+function formatShortDate(value: string | null | undefined): string {
+  if (!value) {
+    return "sem dado";
   }
-  switch (program) {
-    case "signals":
-      return dashboard.signals.length;
-    case "chat":
-      return dashboard.events.length;
-    case "stocks":
-      return dashboard.stocks.length;
-    case "tv":
-      return dashboard.channels.length;
-    case "markets":
-      return dashboard.markets.length;
-    case "defcon":
-      return dashboard.defcon.level;
-    case "outbreaks":
-      return dashboard.outbreaks.length;
-  }
-}
-
-function mapModeLabel(mapMode: FocusMode): string {
-  const item = MAP_MODE_OPTIONS.find((option) => option.id === mapMode);
-  return item?.label ?? "Tudo";
-}
-
-function localizeDashboardPayload(payload: DashboardPayload): DashboardPayload {
-  return {
-    ...payload,
-    signals: payload.signals.map((signal) => ({
-      ...signal,
-      name: localizeCountryName(signal.iso2, signal.name),
-    })),
-    events: payload.events.map((event) => ({
-      ...event,
-      countryName: event.countryIso2
-        ? localizeCountryName(event.countryIso2, event.countryName || event.countryIso2)
-        : event.countryName,
-    })),
-    channels: payload.channels.map((channel) => ({
-      ...channel,
-      countryName: channel.countryIso2
-        ? localizeCountryName(channel.countryIso2, channel.countryName || channel.countryIso2)
-        : channel.countryName,
-    })),
-  };
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }

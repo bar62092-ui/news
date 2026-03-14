@@ -166,24 +166,41 @@ class WorldWatchRepository:
                 """,
                 (country_iso2.upper(), limit),
             ).fetchall()
-        payload: list[dict[str, Any]] = []
-        for row in rows:
-            payload.append(
-                {
-                    "id": int(row["id"]),
-                    "title": row["title"],
-                    "source": row["source"],
-                    "url": row["url"],
-                    "publishedAt": row["published_at"],
-                    "language": row["language"],
-                    "topics": json.loads(row["topics_json"] or "[]"),
-                    "fallbackScope": row["fallback_scope"],
-                    "summary": row["summary"],
-                    "contentText": row["content_text"],
-                    "fetchedAt": row["fetched_at"],
-                }
-            )
-        return payload
+        return [self._news_row_to_payload(row) for row in rows]
+
+    def list_global_news(self, limit: int = 60) -> list[dict[str, Any]]:
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    news_items.id,
+                    news_items.country_iso2,
+                    countries.name AS country_name,
+                    news_items.title,
+                    news_items.source,
+                    news_items.url,
+                    news_items.published_at,
+                    news_items.language,
+                    news_items.topics_json,
+                    news_items.fallback_scope,
+                    news_items.summary,
+                    news_items.content_text,
+                    news_items.fetched_at
+                FROM news_items
+                LEFT JOIN countries ON countries.iso2 = news_items.country_iso2
+                ORDER BY news_items.published_at DESC, news_items.id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                **self._news_row_to_payload(row),
+                "countryIso2": row["country_iso2"],
+                "countryName": row["country_name"],
+            }
+            for row in rows
+        ]
 
     def list_news_since(self, country_iso2: str, since: datetime) -> list[NewsItem]:
         with self.database.connect() as connection:
@@ -454,4 +471,19 @@ class WorldWatchRepository:
             "seaCount": sea_counts.get(iso2, 0),
             "lastNewsRefreshAt": row["last_news_refresh_at"],
             "lastNewsStatus": row["last_news_status"],
+        }
+
+    def _news_row_to_payload(self, row: Any) -> dict[str, Any]:
+        return {
+            "id": int(row["id"]),
+            "title": row["title"],
+            "source": row["source"],
+            "url": row["url"],
+            "publishedAt": row["published_at"],
+            "language": row["language"],
+            "topics": json.loads(row["topics_json"] or "[]"),
+            "fallbackScope": row["fallback_scope"],
+            "summary": row["summary"],
+            "contentText": row["content_text"],
+            "fetchedAt": row["fetched_at"],
         }

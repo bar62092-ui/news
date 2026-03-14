@@ -72,6 +72,10 @@ class NewsRefreshCoordinator:
             topics = self.repository.list_topics(iso2)
         return topics
 
+    def is_country_stale(self, iso2: str) -> bool:
+        refresh_state = self.repository.get_country_refresh_state(iso2.upper())
+        return self._is_stale(refresh_state.get("lastNewsRefreshAt"))
+
     def ensure_refresh(self, iso2: str) -> None:
         iso2 = iso2.upper()
         task = self._tasks.get(iso2)

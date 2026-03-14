@@ -98,14 +98,31 @@ def create_api_router(services: AppServices) -> APIRouter:
             "generatedAt": utc_now().isoformat(),
             "worldBbox": list(WORLD_BBOX),
             "layers": {
-                "air": True,
-                "sea": True,
+                "air": False,
+                "sea": False,
                 "news": True,
                 "trends": True,
                 "x": services.settings.x_enabled,
             },
             "countries": services.repository.list_country_summaries(),
             "providers": services.repository.list_provider_health(),
+        }
+
+    @router.get("/news/live")
+    async def get_live_news(limit: int = 60) -> dict[str, Any]:
+        limit = max(1, min(limit, 120))
+        items = services.repository.list_global_news(limit=limit)
+        if not items:
+            for iso2 in services.settings.watchlist_countries:
+                await services.news.refresh_country(iso2)
+            items = services.repository.list_global_news(limit=limit)
+        else:
+            for iso2 in services.settings.watchlist_countries:
+                if services.news.is_country_stale(iso2):
+                    services.news.ensure_refresh(iso2)
+        return {
+            "generatedAt": utc_now().isoformat(),
+            "items": items,
         }
 
     @router.get("/countries/{iso2}")

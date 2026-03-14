@@ -63,6 +63,16 @@ export type CountryNewsPayload = {
   status: string | null;
 };
 
+export type LiveNewsItem = NewsItem & {
+  countryIso2: string | null;
+  countryName: string | null;
+};
+
+export type LiveNewsPayload = {
+  generatedAt: string;
+  items: LiveNewsItem[];
+};
+
 export type TopicItem = {
   label: string;
   score: number;

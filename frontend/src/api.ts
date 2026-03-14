@@ -3,6 +3,7 @@ import type {
   Bbox,
   CountryNewsPayload,
   CountrySummary,
+  LiveNewsPayload,
   ProvidersPayload,
   TopicsPayload,
   TrafficSnapshot,
@@ -43,6 +44,10 @@ export async function fetchCountry(iso2: string): Promise<CountrySummary> {
 
 export async function fetchCountryNews(iso2: string): Promise<CountryNewsPayload> {
   return getJson<CountryNewsPayload>(`/api/countries/${iso2}/news?limit=20`);
+}
+
+export async function fetchLiveNews(limit = 60): Promise<LiveNewsPayload> {
+  return getJson<LiveNewsPayload>(`/api/news/live?limit=${limit}`);
 }
 
 export async function fetchCountryTopics(iso2: string): Promise<TopicsPayload> {

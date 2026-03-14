@@ -15,6 +15,11 @@ def test_http_endpoints_and_websocket(app):
         assert news_response.json()["items"]
         assert news_response.json()["items"][0]["contentText"]
 
+        live_news_response = client.get("/api/news/live")
+        assert live_news_response.status_code == 200
+        assert live_news_response.json()["items"]
+        assert live_news_response.json()["items"][0]["countryIso2"] == "BR"
+
         topics_response = client.get("/api/countries/BR/topics")
         assert topics_response.status_code == 200
         assert topics_response.json()["items"]

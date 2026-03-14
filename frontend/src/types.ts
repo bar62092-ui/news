@@ -1,7 +1,7 @@
 export type Bbox = [number, number, number, number];
 export type ViewMode = "map" | "chain";
 export type ProgramId = "signals" | "chat" | "stocks" | "tv" | "markets" | "defcon" | "outbreaks";
-export type Tone = "low" | "medium" | "high" | "critical";
+export type Tone = "low" | "medium" | "high" | "critical" | "extreme";
 
 export type CountrySummary = {
   iso2: string;
@@ -142,10 +142,13 @@ export type DashboardSignalItem = {
   name: string;
   score: number;
   level: Tone;
+  riskLabel?: string;
   newsCount: number;
   airCount: number;
   seaCount: number;
   summary: string;
+  drivers?: string[];
+  historyCount?: number;
   lastRefreshAt: string | null;
 };
 
@@ -173,6 +176,11 @@ export type MarketBoardItem = {
   trend: "up" | "down" | "flat";
   board: "stocks" | "markets";
   source: string;
+  reactionTitle?: string | null;
+  reactionSource?: string | null;
+  reactionPublishedAt?: string | null;
+  reactionCountryName?: string | null;
+  reactionSummary?: string | null;
 };
 
 export type ChannelBoardItem = {
@@ -203,6 +211,16 @@ export type DefconSnapshot = {
   score: number;
   summary: string;
   updatedAt: string;
+  alerts?: DefconAlertItem[];
+};
+
+export type DefconAlertItem = {
+  id: string;
+  title: string;
+  tone: Tone;
+  kind: DashboardEventItem["kind"];
+  source: string;
+  publishedAt: string;
 };
 
 export type InfrastructureSummaryItem = {

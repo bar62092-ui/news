@@ -36,6 +36,17 @@ INFRASTRUCTURE_SUMMARY: tuple[dict[str, Any], ...] = (
 )
 
 OUTBREAK_QUERY = '"disease outbreak" OR outbreak OR epidemic OR cholera OR ebola site:who.int when:30d'
+OUTBREAK_SIGNAL_KEYWORDS = ("outbreak", "epidemic", "pandemic", "cholera", "ebola", "measles", "avian influenza", "virus")
+STRESS_SIGNAL_KEYWORDS = ("attack", "sanction", "tariff", "crisis", "missile", "explosion", "emergency", "collapse", "surge")
+QUOTE_REACTION_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "^GSPC": ("wall street", "s&p", "fed", "inflation", "treasury"),
+    "^IXIC": ("nasdaq", "ai", "chip", "semiconductor", "tech", "nvidia"),
+    "^BVSP": ("brazil", "ibovespa", "petrobras", "vale", "selic", "fiscal"),
+    "CL=F": ("oil", "crude", "opec", "petroleo", "petroleum", "brent"),
+    "GC=F": ("gold", "bullion", "safe haven", "ouro"),
+    "DX-Y.NYB": ("dollar", "usd", "fed", "rates", "dolar"),
+    "BTC-USD": ("bitcoin", "crypto", "etf", "blockchain", "exchange"),
+}
 
 
 @dataclass(slots=True, frozen=True)
@@ -119,9 +130,9 @@ class MonitorProgramsProvider:
         signals = self._build_signal_board()
         channels = self._build_channel_board(signals)
         events = self._build_event_feed(signals, channels, outbreaks, quotes)
-        defcon = self._build_defcon(signals, outbreaks, quotes)
-        stocks = [quote.to_dict() for quote in quotes if quote.board == "stocks"]
-        markets = [quote.to_dict() for quote in quotes if quote.board == "markets"]
+        defcon = self._build_defcon(signals, outbreaks, quotes, events)
+        stocks = self._build_quote_board([quote for quote in quotes if quote.board == "stocks"])
+        markets = self._build_quote_board([quote for quote in quotes if quote.board == "markets"])
         return {
             "generatedAt": utc_now().isoformat(),
             "signals": signals,
@@ -411,6 +422,7 @@ class MonitorProgramsProvider:
         signals: list[dict[str, Any]],
         outbreaks: list[OutbreakSignal],
         quotes: list[QuoteSnapshot],
+        events: list[dict[str, Any]],
     ) -> dict[str, Any]:
         signal_pressure = sum(min(item["score"], 100) for item in signals[:5]) * 0.12
         outbreak_pressure = sum({"critical": 18, "high": 11, "medium": 6, "low": 3}[item.tone] for item in outbreaks[:4])
@@ -439,7 +451,33 @@ class MonitorProgramsProvider:
             "score": round(score, 2),
             "summary": summary,
             "updatedAt": utc_now().isoformat(),
+            "alerts": [
+                {
+                    "id": item["id"],
+                    "title": item["title"],
+                    "tone": item["tone"],
+                    "kind": item["kind"],
+                    "source": item["source"],
+                    "publishedAt": item["publishedAt"],
+                }
+                for item in events[:5]
+            ],
         }
+
+    def _build_quote_board(self, quotes: list[QuoteSnapshot]) -> list[dict[str, Any]]:
+        news_items = self.repository.list_global_news(limit=120)
+        payload: list[dict[str, Any]] = []
+        for quote in quotes:
+            item = quote.to_dict()
+            reaction = _find_quote_reaction(quote.symbol, news_items)
+            if reaction is not None:
+                item["reactionTitle"] = reaction["title"]
+                item["reactionSource"] = reaction["source"]
+                item["reactionPublishedAt"] = reaction["publishedAt"]
+                item["reactionCountryName"] = reaction["countryName"]
+                item["reactionSummary"] = reaction["summary"]
+            payload.append(item)
+        return payload
 
     def _sample_quotes(self) -> list[QuoteSnapshot]:
         now = utc_now()
@@ -564,3 +602,14 @@ def _tone_from_outbreak_text(value: str) -> str:
     if any(token in value for token in ("respiratory", "virus", "disease", "transmission")):
         return "medium"
     return "low"
+
+
+def _find_quote_reaction(symbol: str, news_items: list[dict[str, Any]]) -> dict[str, Any] | None:
+    keywords = QUOTE_REACTION_KEYWORDS.get(symbol, ())
+    if not keywords:
+        return None
+    for item in news_items:
+        combined = f"{item.get('title', '')} {item.get('summary', '')} {' '.join(item.get('topics') or [])}".lower()
+        if any(keyword in combined for keyword in keywords):
+            return item
+    return None
